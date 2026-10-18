@@ -16,8 +16,9 @@
   --night: #1f1a17;
 }
 * { box-sizing: border-box; }
-html { min-width: 320px; background: #fbf6ee; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
+html, body, #root { height: 100%; min-width: 320px; }
+html { background: #fbf6ee; }
+body { margin: 0; min-height: 100vh; overflow: hidden; }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible {
