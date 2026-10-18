@@ -82,17 +82,19 @@ Deno.serve(async (request: Request) => {
 
   const signedUrlByPath = new Map<string, string>()
   if (paths.length > 0) {
-    const { data: signedFiles, error: signedError } = await admin.storage
-      .from('photobooth-albums')
-      .createSignedUrls(paths, signedUrlTtlSeconds)
-
+    const signedFiles = await Promise.all(paths.map(async (path) => {
+      const { data, error } = await admin.storage
+        .from('photobooth-albums')
+        .createSignedUrl(path, signedUrlTtlSeconds)
+      return { path, signedUrl: data?.signedUrl, error }
+    }))
+    const signedError = signedFiles.find((file) => file.error || !file.signedUrl)
     if (signedError) {
-      console.error('Signed URL creation failed', signedError)
+      console.error('Signed URL creation failed', signedError.error)
       return json({ error: 'Không thể mở tệp trong album.' }, 500)
     }
-
-    for (const file of signedFiles ?? []) {
-      if (file.path && file.signedUrl) signedUrlByPath.set(file.path, file.signedUrl)
+    for (const file of signedFiles) {
+      if (file.signedUrl) signedUrlByPath.set(file.path, file.signedUrl)
     }
   }
 
