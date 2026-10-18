@@ -55,7 +55,7 @@ pnpm run deploy
 - Output directory: `dist`
 - Environment variable: `VITE_SUPABASE_URL`
 
-File `public/_redirects` đảm bảo mọi đường dẫn album quay về ứng dụng React.
+Cloudflare Pages tự nhận đây là ứng dụng SPA khi dự án không có trang `404.html`.
 
 ## Kết nối Photobooth
 
