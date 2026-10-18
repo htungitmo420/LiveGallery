@@ -66,6 +66,7 @@ Deno.serve(async (request: Request) => {
     .from('photobooth_album_assets')
     .select('id, kind, storage_path, thumbnail_path, mime_type, file_name, sort_order, width, height, duration_ms')
     .eq('album_id', album.id)
+    .neq('kind', 'video')
     .order('sort_order', { ascending: true })
 
   if (assetsError) {

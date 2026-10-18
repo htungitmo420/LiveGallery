@@ -239,10 +239,6 @@
 }
 .thumbnail[aria-current='true'] { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(239,91,66,.16); }
 .thumbnail img { height: 100%; object-fit: cover; width: 100%; }
-.thumbnail__video { align-items: center; background: #28211d; color: white; display: flex; height: 100%; justify-content: center; }
-.thumbnail__badge {
-  align-items: center; background: rgba(20,16,14,.72); border-radius: 50%; color: white; display: flex; height: 23px; justify-content: center; left: 50%; position: absolute; top: 50%; transform: translate(-50%,-50%); width: 23px;
-}
 .gallery__hint { color: #9b8d82; flex: none; font-size: 11px; margin: 2px 0 6px; text-align: center; }
 .gallery__footer { border-top: 1px solid var(--line); flex: 0 0 44px; margin-top: 3px; min-height: 44px; }
 .gallery__footer a { align-items: center; display: inline-flex; gap: 6px; font-weight: 700; }

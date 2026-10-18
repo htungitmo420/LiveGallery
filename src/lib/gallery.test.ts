@@ -24,7 +24,7 @@ describe('share code routing', () => {
 })
 
 describe('manifest parsing', () => {
-  it('accepts image and video items', () => {
+  it('accepts image items and omits legacy videos', () => {
     const album = parseManifest({
       album: {
         shareCode: 'D44092',
@@ -62,8 +62,8 @@ describe('manifest parsing', () => {
     })
 
     expect(album.shareCode).toBe('d44092')
-    expect(album.items).toHaveLength(2)
-    expect(album.items[1].kind).toBe('video')
+    expect(album.items).toHaveLength(1)
+    expect(album.items[0].kind).toBe('image')
   })
 
   it('rejects an invalid manifest', () => {

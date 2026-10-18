@@ -60,8 +60,6 @@ function extension(file: File) {
     'image/png': 'png',
     'image/webp': 'webp',
     'image/gif': 'gif',
-    'video/webm': 'webm',
-    'video/mp4': 'mp4',
   }
   return byType[baseMimeType(file)] || 'bin'
 }
@@ -120,7 +118,6 @@ Deno.serve(async (request: Request) => {
   const message = String(form.get('message') || '').trim().slice(0, 500)
   const strip = form.get('strip')
   const loopGif = form.get('loopGif')
-  const loopVideo = form.get('loopVideo')
   const photos = form.getAll('photos').filter(isFile)
 
   if (!requiredPhotos || photos.length !== requiredPhotos) {
@@ -132,14 +129,11 @@ Deno.serve(async (request: Request) => {
   if (!isFile(loopGif) || !validFile(loopGif, ['image/gif'])) {
     return json({ error: 'Ảnh động không hợp lệ.' }, 400, origin)
   }
-  if (loopVideo !== null && (!isFile(loopVideo) || !validFile(loopVideo, ['video/webm', 'video/mp4']))) {
-    return json({ error: 'Video chuyển động không hợp lệ.' }, 400, origin)
-  }
   if (photos.some((photo) => !validFile(photo, ['image/jpeg', 'image/png', 'image/webp']))) {
     return json({ error: 'Một hoặc nhiều ảnh chụp không hợp lệ.' }, 400, origin)
   }
 
-  const totalBytes = [strip, loopGif, ...(isFile(loopVideo) ? [loopVideo] : []), ...photos]
+  const totalBytes = [strip, loopGif, ...photos]
     .reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > maxRequestBytes) return json({ error: 'Bộ ảnh vượt quá giới hạn 60 MB.' }, 413, origin)
 
@@ -154,10 +148,9 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Không thể tạo album.' }, 500, origin)
   }
 
-  const files: Array<{ file: File; kind: 'image' | 'gif' | 'video'; name: string }> = [
+  const files: Array<{ file: File; kind: 'image' | 'gif'; name: string }> = [
     { file: strip, kind: 'image', name: `photobooth.${extension(strip)}` },
     { file: loopGif, kind: 'gif', name: 'khoanh-khac.gif' },
-    ...(isFile(loopVideo) ? [{ file: loopVideo, kind: 'video' as const, name: `khoanh-khac.${extension(loopVideo)}` }] : []),
     ...photos.map((photo, index) => ({ file: photo, kind: 'image' as const, name: `anh-${String(index + 1).padStart(2, '0')}.${extension(photo)}` })),
   ]
   const uploadedPaths: string[] = []

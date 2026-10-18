@@ -1,4 +1,4 @@
-export type GalleryMediaKind = 'image' | 'gif' | 'video'
+export type GalleryMediaKind = 'image' | 'gif'
 
 export interface GalleryMedia {
   id: string
@@ -83,7 +83,10 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     throw new Error('Dữ liệu album chưa đầy đủ.')
   }
 
-  const items = rawItems.map((entry, index) => {
+  const items = rawItems.filter((entry) => {
+    if (!entry || typeof entry !== 'object') return true
+    return (entry as Record<string, unknown>).kind !== 'video'
+  }).map((entry, index) => {
     if (!entry || typeof entry !== 'object') {
       throw new Error('Dữ liệu ảnh không hợp lệ.')
     }
@@ -93,7 +96,7 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     const url = stringOrEmpty(media.url)
     const id = stringOrEmpty(media.id)
 
-    if (!id || !url || (kind !== 'image' && kind !== 'gif' && kind !== 'video')) {
+    if (!id || !url || (kind !== 'image' && kind !== 'gif')) {
       throw new Error('Dữ liệu ảnh không hợp lệ.')
     }
 

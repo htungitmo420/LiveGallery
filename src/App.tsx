@@ -130,11 +130,6 @@ function ErrorState({ message }: { message: string }) {
 }
 
 function MediaView({ item, albumTitle }: { item: GalleryMedia; albumTitle: string }) {
-  if (item.kind === 'video') {
-    return <video className="viewer__media" controls key={item.id} playsInline poster={item.thumbnailUrl ?? undefined} preload="metadata">
-      <source src={item.url} type={item.mimeType || 'video/mp4'} />Trình duyệt của bạn chưa hỗ trợ phát video.
-    </video>
-  }
   return <img alt={`${albumTitle} – ${item.fileName}`} className="viewer__media" draggable={false} src={item.url} />
 }
 
@@ -205,7 +200,7 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
       {current ? <>
         <section aria-label="Trình xem album" className="viewer" onPointerDown={onPointerDown} onPointerUp={onPointerUp} ref={viewerRef}>
           <div className="viewer__topbar">
-            <span>{current.kind === 'video' ? 'VIDEO' : current.kind === 'gif' ? 'GIF' : 'ẢNH'}</span>
+            <span>{current.kind === 'gif' ? 'GIF' : 'ẢNH'}</span>
             <span>{activeIndex + 1} / {album.items.length}</span>
           </div>
           <MediaView albumTitle={album.title} item={current} />
@@ -213,16 +208,13 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
             <button aria-label="Ảnh trước" className="viewer__nav viewer__nav--left" onClick={() => move(-1)} type="button"><Icon name="chevron-left" size={26} /></button>
             <button aria-label="Ảnh tiếp theo" className="viewer__nav viewer__nav--right" onClick={() => move(1)} type="button"><Icon name="chevron-right" size={26} /></button>
           </>}
-          {current.kind !== 'video' && <button aria-label="Xem toàn màn hình" className="viewer__fullscreen" onClick={enterFullscreen} type="button"><Icon name="expand" /></button>}
+          <button aria-label="Xem toàn màn hình" className="viewer__fullscreen" onClick={enterFullscreen} type="button"><Icon name="expand" /></button>
         </section>
 
         <div className="thumbnail-row" role="list" aria-label="Danh sách ảnh">
           {album.items.map((item, index) => <button aria-label={`Xem khoảnh khắc ${index + 1}`} aria-current={index === activeIndex}
             className="thumbnail" key={item.id} onClick={() => setActiveIndex(index)} role="listitem" type="button">
-            {item.kind === 'video' && !item.thumbnailUrl
-              ? <span className="thumbnail__video"><Icon name="play" /></span>
-              : <img alt="" loading="lazy" src={item.thumbnailUrl ?? item.url} />}
-            {item.kind === 'video' && <span className="thumbnail__badge"><Icon name="play" size={12} /></span>}
+            <img alt="" loading="lazy" src={item.thumbnailUrl ?? item.url} />
           </button>)}
         </div>
         <p className="gallery__hint">Dùng phím mũi tên hoặc vuốt để chuyển ảnh</p>
