@@ -1,0 +1,4 @@
+project_id = "ufaleumtximjaknhavky"
+
+[functions.album-manifest]
+verify_jwt = false
