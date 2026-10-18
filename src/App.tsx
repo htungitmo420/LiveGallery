@@ -213,7 +213,7 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
             <button aria-label="Ảnh trước" className="viewer__nav viewer__nav--left" onClick={() => move(-1)} type="button"><Icon name="chevron-left" size={26} /></button>
             <button aria-label="Ảnh tiếp theo" className="viewer__nav viewer__nav--right" onClick={() => move(1)} type="button"><Icon name="chevron-right" size={26} /></button>
           </>}
-          <button aria-label="Xem toàn màn hình" className="viewer__fullscreen" onClick={enterFullscreen} type="button"><Icon name="expand" /></button>
+          {current.kind !== 'video' && <button aria-label="Xem toàn màn hình" className="viewer__fullscreen" onClick={enterFullscreen} type="button"><Icon name="expand" /></button>}
         </section>
 
         <div className="thumbnail-row" role="list" aria-label="Danh sách ảnh">
