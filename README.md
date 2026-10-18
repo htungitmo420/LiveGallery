@@ -28,7 +28,7 @@ Migration trong `supabase/migrations` tạo:
 - Bucket riêng tư `photobooth-albums`, giới hạn 100 MB mỗi tệp.
 - RLS và thu hồi quyền đọc trực tiếp từ client.
 
-Edge Function `album-manifest` nhận mã chia sẻ, kiểm tra album đã xuất bản và chưa hết hạn, sau đó tạo URL tạm thời trong một giờ. Frontend không chứa service-role key.
+Edge Function `album-manifest` nhận mã chia sẻ, kiểm tra album đã xuất bản và chưa hết hạn, sau đó tạo URL tạm thời trong một giờ. Edge Function `album-publish` nhận bộ ảnh từ `photobooth-itmo.vercel.app`, kiểm tra loại tệp, dung lượng và giới hạn số album theo thiết bị trước khi ghi vào Storage. Frontend không chứa service-role key.
 
 ## Kiểm tra
 
@@ -59,11 +59,10 @@ Cloudflare Pages tự nhận đây là ứng dụng SPA khi dự án không có 
 
 ## Kết nối Photobooth
 
-Sau khi Photobooth tạo album và tải media lên bucket:
+Photobooth gửi một request multipart tới `album-publish`, gồm bản photobooth hoàn chỉnh, GIF, video (khi trình duyệt hỗ trợ) và toàn bộ ảnh gốc. Function tạo album ở trạng thái nháp, tải các tệp vào bucket riêng tư, ghi metadata rồi mới xuất bản album. Phản hồi chứa mã riêng và đường dẫn dạng:
 
-1. Lưu từng tệp ở đường dẫn khó đoán, ví dụ `<album-id>/<asset-id>.webp`.
-2. Thêm bản ghi vào `photobooth_album_assets`.
-3. Chuyển `photobooth_albums.status` thành `published`.
-4. Tạo QR trỏ tới `https://<gallery-domain>/i/<share_code>`.
+```text
+https://livegallery.nhtisitmo.workers.dev/i/<share_code>
+```
 
-Mọi thao tác ghi nên chạy qua Edge Function có xác thực; không đưa secret key vào trình duyệt.
+QR được tạo ngay trong trình duyệt từ đường dẫn này. Secret key chỉ tồn tại trong Edge Function.
