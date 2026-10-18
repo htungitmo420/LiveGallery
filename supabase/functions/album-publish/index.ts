@@ -46,8 +46,12 @@ function isFile(value: FormDataEntryValue | null): value is File {
   return value instanceof File && value.size > 0
 }
 
+function baseMimeType(file: File) {
+  return file.type.split(';', 1)[0].trim().toLowerCase()
+}
+
 function validFile(file: File, types: string[]) {
-  return file.size <= maxFileBytes && types.includes(file.type)
+  return file.size <= maxFileBytes && types.includes(baseMimeType(file))
 }
 
 function extension(file: File) {
@@ -59,7 +63,7 @@ function extension(file: File) {
     'video/webm': 'webm',
     'video/mp4': 'mp4',
   }
-  return byType[file.type] || 'bin'
+  return byType[baseMimeType(file)] || 'bin'
 }
 
 async function hashClient(request: Request, secret: string) {
@@ -164,7 +168,7 @@ Deno.serve(async (request: Request) => {
       const item = files[index]
       const storagePath = `${album.id}/${crypto.randomUUID()}.${extension(item.file)}`
       const { error: uploadError } = await admin.storage.from(bucket).upload(storagePath, item.file, {
-        contentType: item.file.type,
+        contentType: baseMimeType(item.file),
         cacheControl: '3600',
         upsert: false,
       })
@@ -174,7 +178,7 @@ Deno.serve(async (request: Request) => {
         album_id: album.id,
         kind: item.kind,
         storage_path: storagePath,
-        mime_type: item.file.type,
+        mime_type: baseMimeType(item.file),
         file_name: item.name,
         sort_order: index,
         byte_size: item.file.size,
