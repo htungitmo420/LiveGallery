@@ -5,7 +5,9 @@ const bucket = 'photobooth-albums'
 const galleryBaseUrl = (Deno.env.get('LIVE_GALLERY_URL') || 'https://livegallery.nhtisitmo.workers.dev').replace(/\/$/, '')
 const maxRequestBytes = 60 * 1024 * 1024
 const maxFileBytes = 12 * 1024 * 1024
-const uploadLimitPerHour = 12
+// A single physical booth can serve a full event from one public IP. Keep an
+// abuse ceiling, but do not stop a normal 50-person session after 12 albums.
+const uploadLimitPerHour = 120
 
 const expectedPhotoCount: Record<string, number> = {
   strip3: 6,

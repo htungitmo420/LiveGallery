@@ -74,6 +74,22 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Không thể tải ảnh trong album.' }, 500)
   }
 
+  const [{ data: stickerRows, error: stickerError }, { data: backgroundRows, error: backgroundError }] = await Promise.all([
+    admin
+      .from('photobooth_stickers')
+      .select('id, name, category, asset_path')
+      .eq('is_published', true)
+      .order('sort_order'),
+    admin
+      .from('photobooth_backgrounds')
+      .select('id, name, asset_path')
+      .eq('is_published', true)
+      .order('sort_order')
+      .order('name'),
+  ])
+  if (stickerError) console.error('Sticker catalog lookup failed', stickerError)
+  if (backgroundError) console.error('Background catalog lookup failed', backgroundError)
+
   const paths = Array.from(new Set(
     (assets ?? []).flatMap((asset) =>
       [asset.storage_path, asset.thumbnail_path].filter((path): path is string => Boolean(path)),
@@ -118,5 +134,20 @@ Deno.serve(async (request: Request) => {
       height: asset.height,
       durationMs: asset.duration_ms,
     })),
+    decor: {
+      stickers: (stickerRows ?? [])
+        .filter((sticker) => sticker.category !== 'text' && sticker.category !== 'shapes')
+        .map((sticker) => ({
+          id: sticker.id,
+          name: sticker.name,
+          category: sticker.category,
+          url: admin.storage.from('photobooth-stickers').getPublicUrl(sticker.asset_path).data.publicUrl,
+        })),
+      backgrounds: (backgroundRows ?? []).map((background) => ({
+        id: background.id,
+        name: background.name,
+        url: admin.storage.from('photobooth-background').getPublicUrl(background.asset_path).data.publicUrl,
+      })),
+    },
   })
 })

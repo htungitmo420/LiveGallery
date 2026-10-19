@@ -64,6 +64,21 @@ describe('manifest parsing', () => {
     expect(album.shareCode).toBe('d44092')
     expect(album.items).toHaveLength(1)
     expect(album.items[0].kind).toBe('image')
+    expect(album.stickers).toEqual([])
+    expect(album.backgrounds).toEqual([])
+  })
+
+  it('reads the decor catalog while ignoring malformed entries', () => {
+    const album = parseManifest({
+      album: { shareCode: 'decor01', title: 'Decor', createdAt: '2026-10-20T12:00:00.000Z' },
+      items: [],
+      decor: {
+        stickers: [{ id: 'heart', name: 'Trái tim', category: 'cute', url: 'https://example.com/heart.png' }, null],
+        backgrounds: [{ id: 'paper', name: 'Giấy', url: 'https://example.com/paper.jpg' }, { id: '', name: 'Sai', url: '' }],
+      },
+    })
+    expect(album.stickers).toHaveLength(1)
+    expect(album.backgrounds).toHaveLength(1)
   })
 
   it('rejects an invalid manifest', () => {

@@ -20,11 +20,27 @@ export interface GalleryAlbum {
   createdAt: string
   expiresAt: string | null
   items: GalleryMedia[]
+  stickers: GalleryStickerAsset[]
+  backgrounds: GalleryBackgroundAsset[]
+}
+
+export interface GalleryStickerAsset {
+  id: string
+  name: string
+  category: string
+  url: string
+}
+
+export interface GalleryBackgroundAsset {
+  id: string
+  name: string
+  url: string
 }
 
 interface ManifestResponse {
   album?: unknown
   items?: unknown
+  decor?: unknown
   error?: unknown
 }
 
@@ -117,6 +133,27 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     } satisfies GalleryMedia
   })
 
+  const decor = payload.decor && typeof payload.decor === 'object'
+    ? payload.decor as Record<string, unknown>
+    : {}
+  const stickers = (Array.isArray(decor.stickers) ? decor.stickers : []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const sticker = entry as Record<string, unknown>
+    const id = stringOrEmpty(sticker.id)
+    const name = stringOrEmpty(sticker.name)
+    const url = stringOrEmpty(sticker.url)
+    if (!id || !name || !url) return []
+    return [{ id, name, url, category: stringOrEmpty(sticker.category) || 'cute' }]
+  })
+  const backgrounds = (Array.isArray(decor.backgrounds) ? decor.backgrounds : []).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const background = entry as Record<string, unknown>
+    const id = stringOrEmpty(background.id)
+    const name = stringOrEmpty(background.name)
+    const url = stringOrEmpty(background.url)
+    return id && name && url ? [{ id, name, url }] : []
+  })
+
   return {
     shareCode,
     title,
@@ -124,7 +161,23 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     createdAt,
     expiresAt: nullableString(record.expiresAt),
     items,
+    stickers,
+    backgrounds,
   }
+}
+
+export async function downloadGalleryMedia(item: GalleryMedia): Promise<void> {
+  const response = await fetch(item.url, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Liên kết ảnh đã hết hạn.')
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = item.fileName || 'khoanh-khac'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 export function getManifestEndpoint(): string {

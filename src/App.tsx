@@ -7,8 +7,10 @@ import {
   useState,
 } from 'react'
 import './App.css'
+import { DecorStudio } from './DecorStudio'
 import {
   buildAlbumPath,
+  downloadGalleryMedia,
   fetchAlbum,
   getShareCodeFromPath,
   normalizeShareCode,
@@ -129,15 +131,19 @@ function ErrorState({ message }: { message: string }) {
   </main>
 }
 
-function MediaView({ item, albumTitle }: { item: GalleryMedia; albumTitle: string }) {
-  return <img alt={`${albumTitle} – ${item.fileName}`} className="viewer__media" draggable={false} src={item.url} />
+function MediaView({ item, albumTitle, onError, onLoad }: { item: GalleryMedia; albumTitle: string; onError: () => void; onLoad: () => void }) {
+  return <img alt={`${albumTitle} – ${item.fileName}`} className="viewer__media" draggable={false} onError={onError} onLoad={onLoad} src={item.url} />
 }
 
-function AlbumViewer({ album }: { album: GalleryAlbum }) {
+function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () => Promise<GalleryAlbum> }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [decorating, setDecorating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [notice, setNotice] = useState('')
   const viewerRef = useRef<HTMLDivElement>(null)
   const pointerStart = useRef<number | null>(null)
+  const refreshedBrokenMedia = useRef(false)
   const current = album.items[activeIndex]
 
   const move = useCallback((direction: -1 | 1) => {
@@ -169,6 +175,30 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
     } catch { setCopied(false) }
   }
 
+  const downloadCurrent = async () => {
+    if (!current || downloading) return
+    setDownloading(true)
+    setNotice('')
+    try {
+      await downloadGalleryMedia(current)
+    } catch {
+      try {
+        const fresh = await onRefresh()
+        const replacement = fresh.items.find((item) => item.id === current.id)
+        if (!replacement) throw new Error('Ảnh không còn trong album.')
+        await downloadGalleryMedia(replacement)
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Không thể tải ảnh.')
+      }
+    } finally { setDownloading(false) }
+  }
+
+  const refreshBrokenMedia = () => {
+    if (refreshedBrokenMedia.current) return
+    refreshedBrokenMedia.current = true
+    void onRefresh().catch(() => setNotice('Không thể làm mới ảnh. Hãy thử tải lại trang.'))
+  }
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => { pointerStart.current = event.clientX }
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (pointerStart.current === null) return
@@ -176,6 +206,14 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
     pointerStart.current = null
     if (Math.abs(distance) > 48) move(distance > 0 ? -1 : 1)
   }
+
+  if (decorating) return <main className="gallery">
+    <header className="gallery__header">
+      <a className="brand brand--compact" href="/" aria-label="Trang chủ"><span className="brand__mark"><CameraMark size={28} /></span><span><strong>Khoảnh Khắc</strong><small>LIVE GALLERY</small></span></a>
+      <button className="icon-button" onClick={() => setDecorating(false)} type="button"><Icon name="arrow-left" /><span>Xem album</span></button>
+    </header>
+    <DecorStudio album={album} onClose={() => setDecorating(false)} />
+  </main>
 
   return (
     <main className="gallery">
@@ -185,10 +223,13 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
           <span><strong>Khoảnh Khắc</strong><small>LIVE GALLERY</small></span>
         </a>
         <div className="gallery__actions">
+          <button className="icon-button" onClick={() => setDecorating(true)} type="button"><span aria-hidden="true">✨</span><span>Trang trí</span></button>
           <button className="icon-button" onClick={copyLink} type="button"><Icon name="copy" /><span>{copied ? 'Đã sao chép' : 'Chia sẻ'}</span></button>
-          {current && <a className="icon-button icon-button--accent" download={current.fileName} href={current.url}><Icon name="download" /><span>Tải ảnh</span></a>}
+          {current && <button className="icon-button icon-button--accent" disabled={downloading} onClick={() => void downloadCurrent()} type="button"><Icon name="download" /><span>{downloading ? 'Đang tải…' : 'Tải ảnh'}</span></button>}
         </div>
       </header>
+
+      {notice && <p className="gallery-notice" role="status">{notice}</p>}
 
       <section className="album-heading">
         <div><p className="eyebrow">ALBUM CỦA BẠN</p><h1>{album.title}</h1><p>{formatAlbumDate(album.createdAt)}</p></div>
@@ -203,7 +244,7 @@ function AlbumViewer({ album }: { album: GalleryAlbum }) {
             <span>{current.kind === 'gif' ? 'GIF' : 'ẢNH'}</span>
             <span>{activeIndex + 1} / {album.items.length}</span>
           </div>
-          <MediaView albumTitle={album.title} item={current} />
+          <MediaView albumTitle={album.title} item={current} onError={refreshBrokenMedia} onLoad={() => { refreshedBrokenMedia.current = false }} />
           {album.items.length > 1 && <>
             <button aria-label="Ảnh trước" className="viewer__nav viewer__nav--left" onClick={() => move(-1)} type="button"><Icon name="chevron-left" size={26} /></button>
             <button aria-label="Ảnh tiếp theo" className="viewer__nav viewer__nav--right" onClick={() => move(1)} type="button"><Icon name="chevron-right" size={26} /></button>
@@ -242,9 +283,15 @@ function AlbumRoute({ code }: { code: string }) {
     return () => controller.abort()
   }, [code])
 
+  const refresh = useCallback(async () => {
+    const next = await fetchAlbum(code)
+    setAlbum(next)
+    return next
+  }, [code])
+
   if (error) return <ErrorState message={error} />
   if (!album) return <LoadingState />
-  return <AlbumViewer album={album} />
+  return <AlbumViewer album={album} onRefresh={refresh} />
 }
 
 export default function App() {
