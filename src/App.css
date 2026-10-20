@@ -324,9 +324,14 @@
 .decor-strip-stage, .decor-collage-stage { box-shadow: 0 18px 40px rgba(55,39,29,.18); max-height: 100%; max-width: 100%; position: relative; touch-action: none; }
 .decor-strip-stage { background: white; height: 100%; width: auto; }
 .decor-strip-stage > img { height: 100%; object-fit: contain; width: 100%; }
-.decor-sticker { align-items: center; background: transparent; border: 1px dashed transparent; cursor: grab; display: flex; font-size: clamp(18px, 4vw, 46px); justify-content: center; padding: 0; position: absolute; touch-action: none; user-select: none; }
-.decor-sticker.selected { border-color: white; box-shadow: 0 0 0 2px var(--accent); }
+.decor-sticker-node { aspect-ratio: 1; container-type: inline-size; pointer-events: none; position: absolute; transform: translate(-50%, -50%); }
+.decor-sticker { align-items: center; background: transparent; border: 1px dashed transparent; cursor: grab; display: flex; font-size: 88cqw; height: 100%; justify-content: center; line-height: 1; padding: 0; pointer-events: auto; touch-action: none; user-select: none; width: 100%; }
+.decor-sticker-node.selected .decor-sticker { border-color: white; box-shadow: 0 0 0 2px var(--accent); }
 .decor-sticker img, .decor-sticker-render img { height: 100%; object-fit: contain; width: 100%; }
+.decor-sticker-toolbar { align-items: center; background: rgba(35,29,25,.94); border: 1px solid rgba(255,255,255,.72); border-radius: 999px; box-shadow: 0 7px 20px rgba(23,15,10,.28); display: flex; gap: 3px; padding: 3px; position: absolute; transform: translate(-50%, -50%); }
+.decor-sticker-toolbar button { align-items: center; background: var(--accent); border: 1px solid white; border-radius: 50%; color: white; cursor: grab; display: flex; font-size: 16px; font-weight: 800; height: 29px; justify-content: center; line-height: 1; padding: 0; touch-action: none; width: 29px; }
+.decor-sticker-toolbar button:active { cursor: grabbing; }
+.decor-sticker-toolbar button.delete { background: #2d2926; cursor: pointer; }
 .decor-collage-stage { background-position: center; background-repeat: repeat, repeat, no-repeat; background-size: 24px 24px, 24px 24px, cover; height: 100%; overflow: hidden; width: auto; }
 .decor-collage-item { background: transparent; border: 0; cursor: grab; padding: 0; position: absolute; touch-action: none; }
 .decor-collage-item.selected { outline: 2px dashed white; outline-offset: 4px; }

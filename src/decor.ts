@@ -18,6 +18,16 @@ export interface PlacedSticker extends DecorStickerAsset {
   zIndex: number
 }
 
+export function duplicatePlacedSticker(source: PlacedSticker, placementId: string, zIndex: number): PlacedSticker {
+  return {
+    ...source,
+    placementId,
+    x: Math.min(1.1, source.x + .04),
+    y: Math.min(1.1, source.y + .04),
+    zIndex,
+  }
+}
+
 export interface CollageItem {
   id: string
   x: number

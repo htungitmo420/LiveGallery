@@ -5,6 +5,7 @@ import {
   FALLBACK_STICKERS,
   collageSize,
   downloadCanvas,
+  duplicatePlacedSticker,
   renderCollage,
   renderDecoratedStrip,
   type CollageItem,
@@ -79,6 +80,7 @@ export function DecorStudio({ album, onClose }: Props) {
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const stickerStageRef = useRef<HTMLDivElement>(null)
   const collageStageRef = useRef<HTMLDivElement>(null)
+  const stickerClipboardRef = useRef<PlacedSticker | null>(null)
 
   const assets: DecorStickerAsset[] = useMemo(() => [
     ...album.stickers.map((item) => ({ id: item.id, name: item.name, kind: 'image' as const, content: item.url })),
@@ -87,6 +89,7 @@ export function DecorStudio({ album, onClose }: Props) {
   const selectedSticker = stickers.find((item) => item.placementId === selectedStickerId) ?? null
   const selectedItem = collage.items.find((item) => item.id === selectedItemId) ?? null
   const output = collageSize(collage.format)
+  const topStickerZIndex = Math.max(0, ...stickers.map((item) => item.zIndex)) + 1
 
   useEffect(() => {
     let disposed = false
@@ -107,6 +110,46 @@ export function DecorStudio({ album, onClose }: Props) {
       localStorage.setItem(`livegallery-decor:${album.shareCode}`, JSON.stringify({ stickers, collage: safeCollage }))
     } catch { /* Browser storage is optional. */ }
   }, [album.shareCode, collage, stickers])
+
+  useEffect(() => {
+    if (mode !== 'stickers') return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+      const shortcut = event.ctrlKey || event.metaKey
+
+      if (shortcut && event.key.toLowerCase() === 'c' && selectedSticker) {
+        event.preventDefault()
+        stickerClipboardRef.current = { ...selectedSticker }
+        setNotice('Đã sao chép sticker. Nhấn Ctrl+V để dán.')
+        return
+      }
+
+      if (shortcut && event.key.toLowerCase() === 'v' && stickerClipboardRef.current) {
+        event.preventDefault()
+        if (stickers.length >= 20) {
+          setNotice('Mỗi ảnh dùng tối đa 20 sticker.')
+          return
+        }
+        const source = stickerClipboardRef.current
+        const placementId = makeId('sticker')
+        const zIndex = Math.max(0, ...stickers.map((item) => item.zIndex)) + 1
+        setStickers((current) => [...current, duplicatePlacedSticker(source, placementId, zIndex)])
+        setSelectedStickerId(placementId)
+        setNotice('Đã dán một bản sao sticker.')
+        return
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedStickerId) {
+        event.preventDefault()
+        setStickers((current) => current.filter((item) => item.placementId !== selectedStickerId))
+        setSelectedStickerId(null)
+        setNotice('Đã xóa sticker.')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mode, selectedSticker, selectedStickerId, stickers])
 
   if (!base) return <section className="decor-empty"><h2>Chưa có ảnh photobooth để trang trí</h2><button onClick={onClose}>Quay lại album</button></section>
 
@@ -139,9 +182,68 @@ export function DecorStudio({ album, onClose }: Props) {
       x: Math.min(1.1, Math.max(-.1, (next.clientX - rect.left) / rect.width)),
       y: Math.min(1.1, Math.max(-.1, (next.clientY - rect.top) / rect.height)),
     })
-    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
     window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop, { once: true })
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
+
+  const startStickerResize = (event: React.PointerEvent<HTMLButtonElement>, sticker: PlacedSticker) => {
+    const stage = stickerStageRef.current
+    if (!stage) return
+    event.preventDefault()
+    event.stopPropagation()
+    setSelectedStickerId(sticker.placementId)
+    const pointerId = event.pointerId
+    const rect = stage.getBoundingClientRect()
+    const centerX = rect.left + sticker.x * rect.width
+    const centerY = rect.top + sticker.y * rect.height
+    const initialDistance = Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY))
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      const distance = Math.hypot(next.clientX - centerX, next.clientY - centerY)
+      updateSticker(sticker.placementId, { size: Math.min(.4, Math.max(.05, sticker.size * distance / initialDistance)) })
+    }
+    const stop = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
+
+  const startStickerRotate = (event: React.PointerEvent<HTMLButtonElement>, sticker: PlacedSticker) => {
+    const stage = stickerStageRef.current
+    if (!stage) return
+    event.preventDefault()
+    event.stopPropagation()
+    setSelectedStickerId(sticker.placementId)
+    const pointerId = event.pointerId
+    const rect = stage.getBoundingClientRect()
+    const centerX = rect.left + sticker.x * rect.width
+    const centerY = rect.top + sticker.y * rect.height
+    const initialAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX)
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      const angle = Math.atan2(next.clientY - centerY, next.clientX - centerX)
+      updateSticker(sticker.placementId, { rotation: Math.round(sticker.rotation + (angle - initialAngle) * 180 / Math.PI) })
+    }
+    const stop = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
   }
 
   const updateItem = (id: string, changes: Partial<CollageItem>) => {
@@ -232,14 +334,35 @@ export function DecorStudio({ album, onClose }: Props) {
       <div className="decor-preview">
         {mode === 'stickers' ? <div className="decor-strip-stage" ref={stickerStageRef} style={{ aspectRatio: baseAspect }}>
           <img alt="Ảnh photobooth" draggable={false} src={base.url} onLoad={(event) => setBaseAspect(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />
-          {stickers.slice().sort((a, b) => a.zIndex - b.zIndex).map((sticker) => <button
-            aria-label={`Di chuyển ${sticker.name}`}
-            className={selectedStickerId === sticker.placementId ? 'decor-sticker selected' : 'decor-sticker'}
-            key={sticker.placementId}
-            onClick={() => setSelectedStickerId(sticker.placementId)}
-            onPointerDown={(event) => startStickerMove(event, sticker)}
-            style={{ left: `${sticker.x * 100}%`, top: `${sticker.y * 100}%`, width: `${sticker.size * 100}%`, transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`, zIndex: sticker.zIndex }}
-          >{sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : sticker.content}</button>)}
+          {stickers.slice().sort((a, b) => a.zIndex - b.zIndex).map((sticker) => {
+            const selected = selectedStickerId === sticker.placementId
+            return <div
+              className={selected ? 'decor-sticker-node selected' : 'decor-sticker-node'}
+              key={sticker.placementId}
+              style={{ left: `${sticker.x * 100}%`, top: `${sticker.y * 100}%`, width: `${sticker.size * 100}%`, zIndex: selected ? topStickerZIndex : sticker.zIndex }}
+            >
+              <button
+                aria-label={`Di chuyển ${sticker.name}`}
+                className="decor-sticker"
+                onClick={() => setSelectedStickerId(sticker.placementId)}
+                onPointerDown={(event) => startStickerMove(event, sticker)}
+                style={{ transform: `rotate(${sticker.rotation}deg)` }}
+              >{sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : sticker.content}</button>
+            </div>
+          })}
+          {selectedSticker && <div
+            className="decor-sticker-toolbar"
+            aria-label={`Công cụ cho sticker ${selectedSticker.name}`}
+            style={{
+              left: `${Math.min(.74, Math.max(.26, selectedSticker.x)) * 100}%`,
+              top: `${Math.min(.96, Math.max(.04, selectedSticker.y - selectedSticker.size / 2 - .055)) * 100}%`,
+              zIndex: topStickerZIndex + 1,
+            }}
+          >
+            <button onPointerDown={(event) => startStickerRotate(event, selectedSticker)} aria-label={`Giữ và kéo để xoay ${selectedSticker.name}`} title="Giữ và kéo để xoay">↻</button>
+            <button className="delete" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }} aria-label={`Xóa ${selectedSticker.name}`} title="Xóa sticker">×</button>
+            <button onPointerDown={(event) => startStickerResize(event, selectedSticker)} aria-label={`Giữ và kéo để đổi kích thước ${selectedSticker.name}`} title="Giữ và kéo để đổi kích thước">↘</button>
+          </div>}
         </div> : <div
           className="decor-collage-stage"
           ref={collageStageRef}
@@ -270,7 +393,7 @@ export function DecorStudio({ album, onClose }: Props) {
             <label>Xoay <input type="range" min={-180} max={180} value={selectedSticker.rotation} onChange={(event) => updateSticker(selectedSticker.placementId, { rotation: Number(event.target.value) })} /></label>
             <button className="danger" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }}>Xóa sticker</button>
           </div>}
-          <p className="decor-help">Kéo sticker trực tiếp trên ảnh, rồi chỉnh kích thước hoặc góc xoay.</p>
+          <p className="decor-help">Chọn sticker để hiện nút xoay, xóa và đổi kích thước. Trên máy tính: Delete để xóa, Ctrl+C/Ctrl+V để sao chép.</p>
         </> : <>
           <div className="decor-section-title"><h2>Khổ nền</h2><span>{output.width} × {output.height}</span></div>
           <div className="decor-format-grid">{COLLAGE_FORMATS.map((item) => <button className={collage.format === item.id ? 'selected' : ''} key={item.id} onClick={() => setCollage((current) => ({ ...current, format: item.id }))}>{item.label}</button>)}</div>
