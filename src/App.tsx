@@ -29,7 +29,7 @@ function CameraMark({ size = 34 }: { size?: number }) {
   )
 }
 
-type IconName = 'arrow-left' | 'chevron-left' | 'chevron-right' | 'copy' | 'download' | 'expand' | 'image' | 'play' | 'search'
+type IconName = 'arrow-left' | 'chevron-left' | 'chevron-right' | 'copy' | 'download' | 'expand' | 'image' | 'play' | 'search' | 'sparkle'
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -42,6 +42,7 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
     image: <><rect height="18" rx="3" width="20" x="2" y="3" /><circle cx="8.5" cy="9" r="1.5" /><path d="m21 15-5-5L5 21" /></>,
     play: <path d="m8 5 11 7-11 7V5Z" />,
     search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
+    sparkle: <><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" /><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></>,
   }
   return <svg aria-hidden="true" fill="none" height={size} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width={size}>{paths[name]}</svg>
 }
@@ -207,7 +208,7 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
     if (Math.abs(distance) > 48) move(distance > 0 ? -1 : 1)
   }
 
-  if (decorating) return <main className="gallery">
+  if (decorating) return <main className="gallery gallery--decorating">
     <header className="gallery__header">
       <a className="brand brand--compact" href="/" aria-label="Trang chủ"><span className="brand__mark"><CameraMark size={28} /></span><span><strong>Khoảnh Khắc</strong><small>LIVE GALLERY</small></span></a>
       <button className="icon-button" onClick={() => setDecorating(false)} type="button"><Icon name="arrow-left" /><span>Xem album</span></button>
@@ -223,9 +224,9 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
           <span><strong>Khoảnh Khắc</strong><small>LIVE GALLERY</small></span>
         </a>
         <div className="gallery__actions">
-          <button className="icon-button" onClick={() => setDecorating(true)} type="button"><span aria-hidden="true">✨</span><span>Trang trí</span></button>
-          <button className="icon-button" onClick={copyLink} type="button"><Icon name="copy" /><span>{copied ? 'Đã sao chép' : 'Chia sẻ'}</span></button>
-          {current && <button className="icon-button icon-button--accent" disabled={downloading} onClick={() => void downloadCurrent()} type="button"><Icon name="download" /><span>{downloading ? 'Đang tải…' : 'Tải ảnh'}</span></button>}
+          <button aria-label="Trang trí" className="icon-button" onClick={() => setDecorating(true)} type="button"><Icon name="sparkle" /><span>Trang trí</span></button>
+          <button aria-label="Chia sẻ" className="icon-button" onClick={copyLink} type="button"><Icon name="copy" /><span>{copied ? 'Đã sao chép' : 'Chia sẻ'}</span></button>
+          {current && <button aria-label="Tải ảnh" className="icon-button icon-button--accent" disabled={downloading} onClick={() => void downloadCurrent()} type="button"><Icon name="download" /><span>{downloading ? 'Đang tải…' : 'Tải ảnh'}</span></button>}
         </div>
       </header>
 

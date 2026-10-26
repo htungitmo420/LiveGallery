@@ -18,12 +18,75 @@ export interface PlacedSticker extends DecorStickerAsset {
   zIndex: number
 }
 
+export function clampStickerCoord(value: number): number {
+  return Math.min(1.1, Math.max(-.1, value))
+}
+
+export function clampStickerSize(value: number): number {
+  return Math.min(.4, Math.max(.05, Number(value.toFixed(3))))
+}
+
+export function normalizeStickerRotation(degrees: number): number {
+  const rounded = Math.round(degrees)
+  if (rounded === 180) return 180
+  const wrapped = ((((rounded + 180) % 360) + 360) % 360) - 180
+  return Object.is(wrapped, -0) ? 0 : wrapped
+}
+
+export function movePlacedSticker(
+  sticker: Pick<PlacedSticker, 'x' | 'y'>,
+  deltaX: number,
+  deltaY: number,
+): Pick<PlacedSticker, 'x' | 'y'> {
+  return {
+    x: clampStickerCoord(sticker.x + deltaX),
+    y: clampStickerCoord(sticker.y + deltaY),
+  }
+}
+
+export function transformStickerByGesture(
+  initial: Pick<PlacedSticker, 'size' | 'rotation'>,
+  initialDistance: number,
+  currentDistance: number,
+  initialAngleRad: number,
+  currentAngleRad: number,
+): Pick<PlacedSticker, 'size' | 'rotation'> {
+  const safeInitialDistance = Math.max(1, initialDistance)
+  const scale = Math.max(.1, currentDistance) / safeInitialDistance
+  const angleDeltaDeg = ((currentAngleRad - initialAngleRad) * 180) / Math.PI
+  return {
+    size: clampStickerSize(initial.size * scale),
+    rotation: normalizeStickerRotation(initial.rotation + angleDeltaDeg),
+  }
+}
+
+export function getStickerToolbarPosition(sticker: Pick<PlacedSticker, 'x' | 'y' | 'size'>): {
+  left: number
+  top: number
+  placement: 'above' | 'below'
+} {
+  const left = Math.min(.7, Math.max(.3, sticker.x))
+  const aboveTop = sticker.y - sticker.size / 2 - .055
+  if (aboveTop < .03) {
+    return {
+      left,
+      top: Math.min(.94, Math.max(.05, sticker.y + sticker.size / 2 + .06)),
+      placement: 'below',
+    }
+  }
+  return {
+    left,
+    top: Math.min(.94, Math.max(.04, aboveTop)),
+    placement: 'above',
+  }
+}
+
 export function duplicatePlacedSticker(source: PlacedSticker, placementId: string, zIndex: number): PlacedSticker {
   return {
     ...source,
     placementId,
-    x: Math.min(1.1, source.x + .04),
-    y: Math.min(1.1, source.y + .04),
+    x: clampStickerCoord(source.x + .04),
+    y: clampStickerCoord(source.y + .04),
     zIndex,
   }
 }

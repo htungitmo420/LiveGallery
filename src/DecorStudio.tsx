@@ -3,11 +3,16 @@ import {
   COLLAGE_FORMATS,
   DEFAULT_COLLAGE,
   FALLBACK_STICKERS,
+  clampStickerSize,
   collageSize,
   downloadCanvas,
   duplicatePlacedSticker,
+  getStickerToolbarPosition,
+  movePlacedSticker,
+  normalizeStickerRotation,
   renderCollage,
   renderDecoratedStrip,
+  transformStickerByGesture,
   type CollageItem,
   type CollageSettings,
   type DecorMode,
@@ -58,7 +63,7 @@ function StripArtwork({ source, stickers }: { source: string; stickers: PlacedSt
         transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
         zIndex: sticker.zIndex,
       }}
-    >{sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : sticker.content}</span>)}
+    >{sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : <span>{sticker.content}</span>}</span>)}
   </div>
 }
 
@@ -81,6 +86,8 @@ export function DecorStudio({ album, onClose }: Props) {
   const stickerStageRef = useRef<HTMLDivElement>(null)
   const collageStageRef = useRef<HTMLDivElement>(null)
   const stickerClipboardRef = useRef<PlacedSticker | null>(null)
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const dragCancelRef = useRef<(() => void) | null>(null)
 
   const assets: DecorStickerAsset[] = useMemo(() => [
     ...album.stickers.map((item) => ({ id: item.id, name: item.name, kind: 'image' as const, content: item.url })),
@@ -90,6 +97,7 @@ export function DecorStudio({ album, onClose }: Props) {
   const selectedItem = collage.items.find((item) => item.id === selectedItemId) ?? null
   const output = collageSize(collage.format)
   const topStickerZIndex = Math.max(0, ...stickers.map((item) => item.zIndex)) + 1
+  const toolbarPos = selectedSticker ? getStickerToolbarPosition(selectedSticker) : null
 
   useEffect(() => {
     let disposed = false
@@ -110,6 +118,18 @@ export function DecorStudio({ album, onClose }: Props) {
       localStorage.setItem(`livegallery-decor:${album.shareCode}`, JSON.stringify({ stickers, collage: safeCollage }))
     } catch { /* Browser storage is optional. */ }
   }, [album.shareCode, collage, stickers])
+
+  const duplicateSticker = (source: PlacedSticker, noticeMessage = 'Đã nhân bản sticker.') => {
+    if (stickers.length >= 20) {
+      setNotice('Mỗi ảnh dùng tối đa 20 sticker.')
+      return
+    }
+    const placementId = makeId('sticker')
+    const zIndex = Math.max(0, ...stickers.map((item) => item.zIndex)) + 1
+    setStickers((current) => [...current, duplicatePlacedSticker(source, placementId, zIndex)])
+    setSelectedStickerId(placementId)
+    setNotice(noticeMessage)
+  }
 
   useEffect(() => {
     if (mode !== 'stickers') return
@@ -162,7 +182,7 @@ export function DecorStudio({ album, onClose }: Props) {
       y: .18 + Math.min(.25, stickers.length * .035),
       size: .14,
       rotation: 0,
-      zIndex: stickers.length + 1,
+      zIndex: topStickerZIndex,
     }
     setStickers((current) => [...current, next])
     setSelectedStickerId(next.placementId)
@@ -172,21 +192,94 @@ export function DecorStudio({ album, onClose }: Props) {
     setStickers((current) => current.map((item) => item.placementId === id ? { ...item, ...changes } : item))
   }
 
+  const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = activePointersRef.current
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    const cleanupPointer = (next: PointerEvent) => {
+      if (next.pointerId !== event.pointerId) return
+      pointers.delete(next.pointerId)
+      window.removeEventListener('pointerup', cleanupPointer)
+      window.removeEventListener('pointercancel', cleanupPointer)
+    }
+    window.addEventListener('pointerup', cleanupPointer)
+    window.addEventListener('pointercancel', cleanupPointer)
+
+    if (pointers.size === 2 && selectedSticker) {
+      dragCancelRef.current?.()
+      const [first, second] = Array.from(pointers.values())
+      const initialDistance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
+      const initialAngle = Math.atan2(second.y - first.y, second.x - first.x)
+      const initialSize = selectedSticker.size
+      const initialRotation = selectedSticker.rotation
+      const stickerId = selectedSticker.placementId
+
+      const onPinchMove = (next: PointerEvent) => {
+        if (!pointers.has(next.pointerId)) return
+        pointers.set(next.pointerId, { x: next.clientX, y: next.clientY })
+        if (pointers.size < 2) return
+        const [p1, p2] = Array.from(pointers.values())
+        const currentDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y)
+        const currentAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x)
+        updateSticker(
+          stickerId,
+          transformStickerByGesture(
+            { size: initialSize, rotation: initialRotation },
+            initialDistance,
+            currentDistance,
+            initialAngle,
+            currentAngle,
+          ),
+        )
+      }
+      const stopPinch = () => {
+        if (pointers.size >= 2) return
+        window.removeEventListener('pointermove', onPinchMove)
+        window.removeEventListener('pointerup', stopPinch)
+        window.removeEventListener('pointercancel', stopPinch)
+      }
+      window.addEventListener('pointermove', onPinchMove)
+      window.addEventListener('pointerup', stopPinch)
+      window.addEventListener('pointercancel', stopPinch)
+      return
+    }
+
+    const target = event.target
+    if (
+      pointers.size === 1
+      && (target === event.currentTarget || (target instanceof HTMLImageElement && target.parentElement === event.currentTarget))
+    ) {
+      setSelectedStickerId(null)
+    }
+  }
+
   const startStickerMove = (event: React.PointerEvent<HTMLButtonElement>, sticker: PlacedSticker) => {
     const stage = stickerStageRef.current
-    if (!stage) return
+    if (!stage || activePointersRef.current.size >= 2) return
     event.preventDefault()
-    setSelectedStickerId(sticker.placementId)
+    const pointerId = event.pointerId
+    const startX = event.clientX
+    const startY = event.clientY
+    const originX = sticker.x
+    const originY = sticker.y
     const rect = stage.getBoundingClientRect()
-    const move = (next: PointerEvent) => updateSticker(sticker.placementId, {
-      x: Math.min(1.1, Math.max(-.1, (next.clientX - rect.left) / rect.width)),
-      y: Math.min(1.1, Math.max(-.1, (next.clientY - rect.top) / rect.height)),
-    })
+    const nextZ = sticker.zIndex === topStickerZIndex - 1 ? sticker.zIndex : topStickerZIndex
+    setSelectedStickerId(sticker.placementId)
+    if (nextZ !== sticker.zIndex) updateSticker(sticker.placementId, { zIndex: nextZ })
+
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId || activePointersRef.current.size >= 2) return
+      const deltaX = (next.clientX - startX) / Math.max(1, rect.width)
+      const deltaY = (next.clientY - startY) / Math.max(1, rect.height)
+      updateSticker(sticker.placementId, movePlacedSticker({ x: originX, y: originY }, deltaX, deltaY))
+    }
     const stop = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', stop)
       window.removeEventListener('pointercancel', stop)
+      if (dragCancelRef.current === stop) dragCancelRef.current = null
     }
+    dragCancelRef.current = stop
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
     window.addEventListener('pointercancel', stop)
@@ -206,7 +299,7 @@ export function DecorStudio({ album, onClose }: Props) {
     const move = (next: PointerEvent) => {
       if (next.pointerId !== pointerId) return
       const distance = Math.hypot(next.clientX - centerX, next.clientY - centerY)
-      updateSticker(sticker.placementId, { size: Math.min(.4, Math.max(.05, sticker.size * distance / initialDistance)) })
+      updateSticker(sticker.placementId, { size: clampStickerSize(sticker.size * distance / initialDistance) })
     }
     const stop = (next: PointerEvent) => {
       if (next.pointerId !== pointerId) return
@@ -233,7 +326,7 @@ export function DecorStudio({ album, onClose }: Props) {
     const move = (next: PointerEvent) => {
       if (next.pointerId !== pointerId) return
       const angle = Math.atan2(next.clientY - centerY, next.clientX - centerX)
-      updateSticker(sticker.placementId, { rotation: Math.round(sticker.rotation + (angle - initialAngle) * 180 / Math.PI) })
+      updateSticker(sticker.placementId, { rotation: normalizeStickerRotation(sticker.rotation + (angle - initialAngle) * 180 / Math.PI) })
     }
     const stop = (next: PointerEvent) => {
       if (next.pointerId !== pointerId) return
@@ -254,15 +347,31 @@ export function DecorStudio({ album, onClose }: Props) {
     const stage = collageStageRef.current
     if (!stage) return
     event.preventDefault()
+    const pointerId = event.pointerId
+    const startX = event.clientX
+    const startY = event.clientY
+    const originX = item.x
+    const originY = item.y
     setSelectedItemId(item.id)
     const rect = stage.getBoundingClientRect()
-    const move = (next: PointerEvent) => updateItem(item.id, {
-      x: Math.min(1.12, Math.max(-.12, (next.clientX - rect.left) / rect.width)),
-      y: Math.min(1.12, Math.max(-.12, (next.clientY - rect.top) / rect.height)),
-    })
-    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      const nextX = originX + (next.clientX - startX) / Math.max(1, rect.width)
+      const nextY = originY + (next.clientY - startY) / Math.max(1, rect.height)
+      updateItem(item.id, {
+        x: Math.min(1.12, Math.max(-.12, nextX)),
+        y: Math.min(1.12, Math.max(-.12, nextY)),
+      })
+    }
+    const stop = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
     window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', stop, { once: true })
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
   }
 
   const addCopy = () => {
@@ -323,16 +432,21 @@ export function DecorStudio({ album, onClose }: Props) {
 
   return <section className="decor-studio">
     <div className="decor-studio__bar">
-      <div><p className="eyebrow">TRANG TRÍ SAU KHI CHỤP</p><h1>Thêm dấu ấn của bạn</h1></div>
-      <div className="decor-studio__actions"><button onClick={onClose}>Quay lại album</button><button className="accent" disabled={busy} onClick={() => void exportDecor()}>{busy ? 'Đang tạo…' : 'Tải ảnh hoàn chỉnh'}</button></div>
+      <div className="decor-studio__title"><p className="eyebrow">TRANG TRÍ SAU KHI CHỤP</p><h1>Thêm dấu ấn của bạn</h1></div>
+      <div className="decor-studio__actions"><button type="button" onClick={onClose}>← Album</button><button type="button" className="accent" disabled={busy} onClick={() => void exportDecor()}>{busy ? 'Đang tạo…' : <>Tải ảnh<span className="desktop-only"> hoàn chỉnh</span></>}</button></div>
     </div>
     <div className="decor-tabs" role="tablist">
-      <button className={mode === 'stickers' ? 'selected' : ''} onClick={() => setMode('stickers')}>Sticker ({stickers.length})</button>
-      <button className={mode === 'background' ? 'selected' : ''} onClick={() => setMode('background')}>Nền ghép ({collage.items.length})</button>
+      <button type="button" className={mode === 'stickers' ? 'selected' : ''} onClick={() => setMode('stickers')}>Sticker ({stickers.length})</button>
+      <button type="button" className={mode === 'background' ? 'selected' : ''} onClick={() => setMode('background')}>Nền ghép ({collage.items.length})</button>
     </div>
     <div className="decor-workspace">
       <div className="decor-preview">
-        {mode === 'stickers' ? <div className="decor-strip-stage" ref={stickerStageRef} style={{ aspectRatio: baseAspect }}>
+        {mode === 'stickers' ? <div
+          className="decor-strip-stage"
+          onPointerDown={onStagePointerDown}
+          ref={stickerStageRef}
+          style={{ aspectRatio: baseAspect, ['--stage-aspect' as string]: baseAspect }}
+        >
           <img alt="Ảnh photobooth" draggable={false} src={base.url} onLoad={(event) => setBaseAspect(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)} />
           {stickers.slice().sort((a, b) => a.zIndex - b.zIndex).map((sticker) => {
             const selected = selectedStickerId === sticker.placementId
@@ -342,6 +456,7 @@ export function DecorStudio({ album, onClose }: Props) {
               style={{ left: `${sticker.x * 100}%`, top: `${sticker.y * 100}%`, width: `${sticker.size * 100}%`, zIndex: selected ? topStickerZIndex : sticker.zIndex }}
             >
               <button
+                type="button"
                 aria-label={`Di chuyển ${sticker.name}`}
                 className="decor-sticker"
                 onClick={() => setSelectedStickerId(sticker.placementId)}
@@ -350,24 +465,26 @@ export function DecorStudio({ album, onClose }: Props) {
               >{sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : sticker.content}</button>
             </div>
           })}
-          {selectedSticker && <div
+          {selectedSticker && toolbarPos && <div
             className="decor-sticker-toolbar"
             aria-label={`Công cụ cho sticker ${selectedSticker.name}`}
             style={{
-              left: `${Math.min(.74, Math.max(.26, selectedSticker.x)) * 100}%`,
-              top: `${Math.min(.96, Math.max(.04, selectedSticker.y - selectedSticker.size / 2 - .055)) * 100}%`,
+              left: `${toolbarPos.left * 100}%`,
+              top: `${toolbarPos.top * 100}%`,
               zIndex: topStickerZIndex + 1,
             }}
           >
-            <button onPointerDown={(event) => startStickerRotate(event, selectedSticker)} aria-label={`Giữ và kéo để xoay ${selectedSticker.name}`} title="Giữ và kéo để xoay">↻</button>
-            <button className="delete" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }} aria-label={`Xóa ${selectedSticker.name}`} title="Xóa sticker">×</button>
-            <button onPointerDown={(event) => startStickerResize(event, selectedSticker)} aria-label={`Giữ và kéo để đổi kích thước ${selectedSticker.name}`} title="Giữ và kéo để đổi kích thước">↘</button>
+            <button type="button" onPointerDown={(event) => startStickerRotate(event, selectedSticker)} aria-label={`Giữ và kéo để xoay ${selectedSticker.name}`} title="Giữ và kéo để xoay">↻</button>
+            <button type="button" onClick={() => duplicateSticker(selectedSticker)} aria-label={`Nhân bản ${selectedSticker.name}`} title="Nhân bản sticker">⧉</button>
+            <button type="button" onPointerDown={(event) => startStickerResize(event, selectedSticker)} aria-label={`Giữ và kéo để đổi kích thước ${selectedSticker.name}`} title="Giữ và kéo để đổi kích thước">↘</button>
+            <button type="button" className="delete" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }} aria-label={`Xóa ${selectedSticker.name}`} title="Xóa sticker">×</button>
           </div>}
         </div> : <div
           className="decor-collage-stage"
           ref={collageStageRef}
           style={{
             aspectRatio: `${output.width}/${output.height}`,
+            ['--stage-aspect' as string]: output.width / output.height,
             backgroundColor: collage.background,
             backgroundImage: backgroundLayers.length ? backgroundLayers.join(',') : undefined,
             backgroundSize: `${patternLayers.map(() => '24px 24px').join(',')}${patternLayers.length && collage.backgroundImageUrl ? ',' : ''}${collage.backgroundImageUrl ? 'cover' : ''}` || undefined,
@@ -375,6 +492,7 @@ export function DecorStudio({ album, onClose }: Props) {
           }}
         >
           {collage.items.slice().sort((a, b) => a.zIndex - b.zIndex).map((item) => <button
+            type="button"
             className={selectedItemId === item.id ? 'decor-collage-item selected' : 'decor-collage-item'}
             key={item.id}
             onPointerDown={(event) => startItemMove(event, item)}
@@ -386,34 +504,50 @@ export function DecorStudio({ album, onClose }: Props) {
 
       <aside className="decor-controls">
         {mode === 'stickers' ? <>
-          <div className="decor-section-title"><h2>Chọn sticker</h2><span>{album.stickers.length ? 'Supabase + có sẵn' : 'Có sẵn'}</span></div>
-          <div className="decor-sticker-library">{assets.map((asset) => <button key={asset.id} onClick={() => addSticker(asset)} title={asset.name}>{asset.kind === 'image' ? <img alt={asset.name} src={asset.content} /> : <span>{asset.content}</span>}</button>)}</div>
-          {selectedSticker && <div className="decor-sliders">
-            <label>Kích thước <input type="range" min={.05} max={.4} step={.01} value={selectedSticker.size} onChange={(event) => updateSticker(selectedSticker.placementId, { size: Number(event.target.value) })} /></label>
-            <label>Xoay <input type="range" min={-180} max={180} value={selectedSticker.rotation} onChange={(event) => updateSticker(selectedSticker.placementId, { rotation: Number(event.target.value) })} /></label>
-            <button className="danger" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }}>Xóa sticker</button>
+          {selectedSticker && <div className="decor-sliders decor-sliders--top">
+            <div className="decor-sliders__header">
+              <strong>Đang chỉnh: {selectedSticker.name}</strong>
+              <div className="decor-quick-actions">
+                <button type="button" onClick={() => duplicateSticker(selectedSticker)}>Nhân bản</button>
+                <button type="button" onClick={() => updateSticker(selectedSticker.placementId, { rotation: 0 })}>0°</button>
+                <button type="button" className="danger" onClick={() => { setStickers((current) => current.filter((item) => item.placementId !== selectedSticker.placementId)); setSelectedStickerId(null) }}>Xóa</button>
+                <button type="button" onClick={() => setSelectedStickerId(null)}>Xong</button>
+              </div>
+            </div>
+            <label><span>Kích thước <b>{Math.round(selectedSticker.size * 100)}%</b></span><input type="range" min={.05} max={.4} step={.01} value={selectedSticker.size} onChange={(event) => updateSticker(selectedSticker.placementId, { size: Number(event.target.value) })} /></label>
+            <label><span>Xoay <b>{selectedSticker.rotation}°</b></span><input type="range" min={-180} max={180} value={selectedSticker.rotation} onChange={(event) => updateSticker(selectedSticker.placementId, { rotation: Number(event.target.value) })} /></label>
           </div>}
-          <p className="decor-help">Chọn sticker để hiện nút xoay, xóa và đổi kích thước. Trên máy tính: Delete để xóa, Ctrl+C/Ctrl+V để sao chép.</p>
+          <div className="decor-section-title"><h2>Chọn sticker</h2><span>{album.stickers.length ? 'Supabase + có sẵn' : 'Có sẵn'}</span></div>
+          <div className={selectedSticker ? 'decor-sticker-library decor-sticker-library--compact' : 'decor-sticker-library'}>
+            {assets.map((asset) => <button type="button" key={asset.id} onClick={() => addSticker(asset)} title={asset.name}>{asset.kind === 'image' ? <img alt={asset.name} src={asset.content} /> : <span>{asset.content}</span>}</button>)}
+          </div>
+          <p className={selectedSticker ? 'decor-help decor-help--selected' : 'decor-help'}>Kéo để di chuyển, dùng 2 ngón tay để phóng to / xoay, hoặc chạm nền để bỏ chọn.<span className="desktop-only"> Trên máy tính: Delete để xóa, Ctrl+C/Ctrl+V để sao chép.</span></p>
         </> : <>
+          {selectedItem && <div className="decor-sliders decor-sliders--top">
+            <div className="decor-sliders__header">
+              <strong>Dải ảnh đang chọn</strong>
+              <div className="decor-quick-actions">
+                <button type="button" onClick={() => updateItem(selectedItem.id, { rotation: 0 })}>0°</button>
+                <button type="button" className="danger" disabled={collage.items.length <= 1} onClick={() => { setCollage((current) => ({ ...current, items: current.items.filter((item) => item.id !== selectedItem.id) })); setSelectedItemId(null) }}>Xóa</button>
+              </div>
+            </div>
+            <label><span>Kích thước <b>{Math.round(selectedItem.width * 100)}%</b></span><input type="range" min={.12} max={.95} step={.01} value={selectedItem.width} onChange={(event) => updateItem(selectedItem.id, { width: Number(event.target.value) })} /></label>
+            <label><span>Xoay <b>{selectedItem.rotation}°</b></span><input type="range" min={-180} max={180} value={selectedItem.rotation} onChange={(event) => updateItem(selectedItem.id, { rotation: Number(event.target.value) })} /></label>
+          </div>}
           <div className="decor-section-title"><h2>Khổ nền</h2><span>{output.width} × {output.height}</span></div>
-          <div className="decor-format-grid">{COLLAGE_FORMATS.map((item) => <button className={collage.format === item.id ? 'selected' : ''} key={item.id} onClick={() => setCollage((current) => ({ ...current, format: item.id }))}>{item.label}</button>)}</div>
+          <div className="decor-format-grid">{COLLAGE_FORMATS.map((item) => <button type="button" className={collage.format === item.id ? 'selected' : ''} key={item.id} onClick={() => setCollage((current) => ({ ...current, format: item.id }))}>{item.label}</button>)}</div>
           <div className="decor-section-title"><h2>Màu & họa tiết</h2><input aria-label="Màu tùy chỉnh" type="color" value={collage.background} onChange={(event) => setCollage((current) => ({ ...current, background: event.target.value }))} /></div>
-          <div className="decor-colors">{COLORS.map((color) => <button aria-label={color} className={collage.background === color ? 'selected' : ''} key={color} onClick={() => setCollage((current) => ({ ...current, background: color }))} style={{ background: color }} />)}</div>
-          <div className="decor-format-grid">{(['solid', 'dots', 'grid'] as const).map((pattern) => <button className={collage.pattern === pattern ? 'selected' : ''} key={pattern} onClick={() => setCollage((current) => ({ ...current, pattern }))}>{pattern === 'solid' ? 'Trơn' : pattern === 'dots' ? 'Chấm' : 'Ô lưới'}</button>)}</div>
-          <div className="decor-section-title"><h2>Nền ảnh</h2><button onClick={() => backgroundInputRef.current?.click()}>+ Thêm từ máy</button></div>
+          <div className="decor-colors">{COLORS.map((color) => <button type="button" aria-label={color} className={collage.background === color ? 'selected' : ''} key={color} onClick={() => setCollage((current) => ({ ...current, background: color }))} style={{ background: color }} />)}</div>
+          <div className="decor-format-grid">{(['solid', 'dots', 'grid'] as const).map((pattern) => <button type="button" className={collage.pattern === pattern ? 'selected' : ''} key={pattern} onClick={() => setCollage((current) => ({ ...current, pattern }))}>{pattern === 'solid' ? 'Trơn' : pattern === 'dots' ? 'Chấm' : 'Ô lưới'}</button>)}</div>
+          <div className="decor-section-title"><h2>Nền ảnh</h2><button type="button" onClick={() => backgroundInputRef.current?.click()}>+ Thêm từ máy</button></div>
           <input ref={backgroundInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void addLocal(event)} />
           <div className="decor-backgrounds">
-            <button className={!collage.backgroundImageUrl ? 'selected' : ''} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: undefined }))}><span style={{ background: collage.background }} />Chỉ màu</button>
-            {album.backgrounds.map((item) => <button className={collage.backgroundImageUrl === item.url ? 'selected' : ''} key={item.id} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))}><img alt="" src={item.url} />{item.name}</button>)}
-            {localBackgrounds.map((item) => <div className="decor-local-background" key={item.id}><button className={collage.backgroundImageUrl === item.url ? 'selected' : ''} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))}><img alt="" src={item.url} />{item.name}</button><button aria-label={`Xóa ${item.name}`} onClick={() => void removeLocal(item)}>×</button></div>)}
+            <button type="button" className={!collage.backgroundImageUrl ? 'selected' : ''} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: undefined }))}><span style={{ background: collage.background }} />Chỉ màu</button>
+            {album.backgrounds.map((item) => <button type="button" className={collage.backgroundImageUrl === item.url ? 'selected' : ''} key={item.id} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))}><img alt="" src={item.url} />{item.name}</button>)}
+            {localBackgrounds.map((item) => <div className="decor-local-background" key={item.id}><button type="button" className={collage.backgroundImageUrl === item.url ? 'selected' : ''} onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))}><img alt="" src={item.url} />{item.name}</button><button type="button" aria-label={`Xóa ${item.name}`} onClick={() => void removeLocal(item)}>×</button></div>)}
           </div>
           <div className="decor-section-title"><h2>Xếp photobooth</h2><span>{collage.items.length}/{MAX_ITEMS}</span></div>
-          <div className="decor-format-grid"><button onClick={chooseTwo}>Hai dải chéo</button><button disabled={collage.items.length >= MAX_ITEMS} onClick={addCopy}>Lặp thêm</button></div>
-          {selectedItem && <div className="decor-sliders">
-            <label>Kích thước <input type="range" min={.12} max={.95} step={.01} value={selectedItem.width} onChange={(event) => updateItem(selectedItem.id, { width: Number(event.target.value) })} /></label>
-            <label>Xoay <input type="range" min={-180} max={180} value={selectedItem.rotation} onChange={(event) => updateItem(selectedItem.id, { rotation: Number(event.target.value) })} /></label>
-            <button className="danger" disabled={collage.items.length <= 1} onClick={() => { setCollage((current) => ({ ...current, items: current.items.filter((item) => item.id !== selectedItem.id) })); setSelectedItemId(null) }}>Xóa bản đang chọn</button>
-          </div>}
+          <div className="decor-format-grid"><button type="button" onClick={chooseTwo}>Hai dải chéo</button><button type="button" disabled={collage.items.length >= MAX_ITEMS} onClick={addCopy}>Lặp thêm</button></div>
           <div className="decor-message-input"><label>Lời nhắn<input maxLength={80} value={collage.message} onChange={(event) => setCollage((current) => ({ ...current, message: event.target.value }))} placeholder="Nhập lời nhắn…" /></label><input aria-label="Màu chữ" type="color" value={collage.messageColor} onChange={(event) => setCollage((current) => ({ ...current, messageColor: event.target.value }))} /></div>
         </>}
         {notice && <p className="decor-notice" role="status">{notice}</p>}

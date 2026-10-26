@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { duplicatePlacedSticker, type PlacedSticker } from './decor'
+import {
+  duplicatePlacedSticker,
+  getStickerToolbarPosition,
+  movePlacedSticker,
+  normalizeStickerRotation,
+  transformStickerByGesture,
+  type PlacedSticker,
+} from './decor'
 
 const sticker: PlacedSticker = {
   id: 'rabbit',
@@ -36,5 +43,48 @@ describe('sticker duplication', () => {
       x: 1.1,
       y: 1.1,
     })
+  })
+})
+
+describe('mobile sticker interactions', () => {
+  it('moves stickers relatively by pointer delta and clamps to stage bounds', () => {
+    expect(movePlacedSticker({ x: .5, y: .5 }, .15, -.2)).toEqual({
+      x: .65,
+      y: .3,
+    })
+    expect(movePlacedSticker({ x: .02, y: .98 }, -.3, .3)).toEqual({
+      x: -.1,
+      y: 1.1,
+    })
+  })
+
+  it('normalizes rotation angles into the [-180, 180] slider range', () => {
+    expect(normalizeStickerRotation(0)).toBe(0)
+    expect(normalizeStickerRotation(180)).toBe(180)
+    expect(normalizeStickerRotation(-180)).toBe(-180)
+    expect(normalizeStickerRotation(195)).toBe(-165)
+    expect(normalizeStickerRotation(-195)).toBe(165)
+  })
+
+  it('transforms size and rotation from two-finger pinch and twist gestures', () => {
+    const result = transformStickerByGesture(
+      { size: .15, rotation: 10 },
+      100,
+      150,
+      0,
+      Math.PI / 4,
+    )
+    expect(result.size).toBeCloseTo(.225)
+    expect(result.rotation).toBe(55)
+  })
+
+  it('flips the floating toolbar below the sticker when near the top edge', () => {
+    const nearTop = getStickerToolbarPosition({ x: .5, y: .08, size: .14 })
+    expect(nearTop.placement).toBe('below')
+    expect(nearTop.top).toBeGreaterThan(.08)
+
+    const middle = getStickerToolbarPosition({ x: .5, y: .5, size: .14 })
+    expect(middle.placement).toBe('above')
+    expect(middle.top).toBeLessThan(.5)
   })
 })
