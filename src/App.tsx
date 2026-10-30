@@ -8,14 +8,17 @@ import {
 } from 'react'
 import './App.css'
 import { DecorStudio } from './DecorStudio'
+import { SavePhotoModal, type ManualSaveState } from './SavePhotoModal'
 import {
   buildAlbumPath,
   downloadGalleryMedia,
   fetchAlbum,
   getShareCodeFromPath,
   normalizeShareCode,
+  preloadGalleryMedia,
   type GalleryAlbum,
   type GalleryMedia,
+  type SaveMediaOutcome,
 } from './lib/gallery'
 
 function CameraMark({ size = 34 }: { size?: number }) {
@@ -141,11 +144,16 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
   const [copied, setCopied] = useState(false)
   const [decorating, setDecorating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [manualSave, setManualSave] = useState<ManualSaveState | null>(null)
   const [notice, setNotice] = useState('')
   const viewerRef = useRef<HTMLDivElement>(null)
   const pointerStart = useRef<number | null>(null)
   const refreshedBrokenMedia = useRef(false)
   const current = album.items[activeIndex]
+
+  useEffect(() => {
+    preloadGalleryMedia(current)
+  }, [current])
 
   const move = useCallback((direction: -1 | 1) => {
     if (album.items.length < 2) return
@@ -176,18 +184,34 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
     } catch { setCopied(false) }
   }
 
+  const applySaveOutcome = (outcome: SaveMediaOutcome) => {
+    if (outcome.status === 'manual' && outcome.previewUrl) {
+      setManualSave({
+        file: outcome.file,
+        previewUrl: outcome.previewUrl,
+        canRetryShare: outcome.canRetryShare,
+      })
+      return
+    }
+    if (outcome.status === 'shared') {
+      setNotice('Chọn “Lưu hình ảnh” / “Ảnh” trên menu vừa mở để lưu vào bộ sưu tập Ảnh.')
+    }
+  }
+
   const downloadCurrent = async () => {
     if (!current || downloading) return
     setDownloading(true)
     setNotice('')
     try {
-      await downloadGalleryMedia(current)
+      const outcome = await downloadGalleryMedia(current)
+      applySaveOutcome(outcome)
     } catch {
       try {
         const fresh = await onRefresh()
         const replacement = fresh.items.find((item) => item.id === current.id)
         if (!replacement) throw new Error('Ảnh không còn trong album.')
-        await downloadGalleryMedia(replacement)
+        const outcome = await downloadGalleryMedia(replacement, { bypassCache: true })
+        applySaveOutcome(outcome)
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Không thể tải ảnh.')
       }
@@ -224,7 +248,7 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
           <span><strong>Khoảnh Khắc</strong><small>LIVE GALLERY</small></span>
         </a>
         <div className="gallery__actions">
-          <button aria-label="Trang trí" className="icon-button" onClick={() => setDecorating(true)} type="button"><Icon name="sparkle" /><span>Trang trí</span></button>
+          <button aria-label="Trang trí" className="icon-button icon-button--decor" onClick={() => setDecorating(true)} type="button"><Icon name="sparkle" /><span>Trang trí</span></button>
           <button aria-label="Chia sẻ" className="icon-button" onClick={copyLink} type="button"><Icon name="copy" /><span>{copied ? 'Đã sao chép' : 'Chia sẻ'}</span></button>
           {current && <button aria-label="Tải ảnh" className="icon-button icon-button--accent" disabled={downloading} onClick={() => void downloadCurrent()} type="button"><Icon name="download" /><span>{downloading ? 'Đang tải…' : 'Tải ảnh'}</span></button>}
         </div>
@@ -265,6 +289,12 @@ function AlbumViewer({ album, onRefresh }: { album: GalleryAlbum; onRefresh: () 
       <footer className="gallery__footer">
         <span>Khoảnh Khắc Photobooth</span><a href="/"><Icon name="arrow-left" size={16} /> Mở album khác</a>
       </footer>
+
+      <SavePhotoModal
+        item={manualSave}
+        onClose={() => setManualSave(null)}
+        onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+      />
     </main>
   )
 }

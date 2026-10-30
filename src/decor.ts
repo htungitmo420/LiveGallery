@@ -1,3 +1,9 @@
+import {
+  normalizeMediaFileName,
+  saveMediaFileToDevice,
+  type SaveMediaOutcome,
+} from './lib/gallery'
+
 export type DecorMode = 'stickers' | 'background'
 export type CollageFormat = 'landscape' | 'square' | 'portrait' | 'story'
 export type CollagePattern = 'solid' | 'dots' | 'grid'
@@ -136,14 +142,30 @@ export function collageSize(format: CollageFormat) {
   return COLLAGE_FORMATS.find((item) => item.id === format) ?? COLLAGE_FORMATS[3]
 }
 
+const loadedImageCache = new Map<string, Promise<HTMLImageElement>>()
+
+export function preloadDecorImage(source: string | undefined): void {
+  if (!source) return
+  void loadImage(source).catch(() => undefined)
+}
+
 function loadImage(source: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+  const cached = loadedImageCache.get(source)
+  if (cached) return cached
+
+  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Không thể tải ảnh để trang trí.'))
+    image.onerror = () => {
+      loadedImageCache.delete(source)
+      reject(new Error('Không thể tải ảnh để trang trí.'))
+    }
     image.src = source
   })
+
+  loadedImageCache.set(source, promise)
+  return promise
 }
 
 export async function renderDecoratedStrip(source: string, stickers: PlacedSticker[]) {
@@ -250,18 +272,19 @@ export async function renderCollage(source: string, stickers: PlacedSticker[], s
   return canvas
 }
 
-export async function downloadCanvas(canvas: HTMLCanvasElement, prefix: string) {
+export async function downloadCanvas(
+  canvas: HTMLCanvasElement,
+  prefix: string,
+): Promise<SaveMediaOutcome> {
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
     (value) => value ? resolve(value) : reject(new Error('Không thể mã hóa ảnh.')),
     'image/jpeg',
     .96,
   ))
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${prefix}-${Date.now()}.jpg`
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+  const fileName = normalizeMediaFileName(`${prefix}-${Date.now()}`, 'image/jpeg', prefix)
+  const file = new File([blob], fileName, {
+    type: 'image/jpeg',
+    lastModified: Date.now(),
+  })
+  return saveMediaFileToDevice(file)
 }

@@ -10,6 +10,7 @@ import {
   getStickerToolbarPosition,
   movePlacedSticker,
   normalizeStickerRotation,
+  preloadDecorImage,
   renderCollage,
   renderDecoratedStrip,
   transformStickerByGesture,
@@ -19,6 +20,7 @@ import {
   type DecorStickerAsset,
   type PlacedSticker,
 } from './decor'
+import { SavePhotoModal, type ManualSaveState } from './SavePhotoModal'
 import { deleteLocalBackground, loadLocalBackgrounds, saveLocalBackground, type LocalBackground } from './lib/localBackgrounds'
 import type { GalleryAlbum } from './lib/gallery'
 
@@ -81,6 +83,7 @@ export function DecorStudio({ album, onClose }: Props) {
   const [baseAspect, setBaseAspect] = useState(.42)
   const [localBackgrounds, setLocalBackgrounds] = useState<LocalBackground[]>([])
   const [busy, setBusy] = useState(false)
+  const [manualSave, setManualSave] = useState<ManualSaveState | null>(null)
   const [notice, setNotice] = useState('')
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const stickerStageRef = useRef<HTMLDivElement>(null)
@@ -109,6 +112,14 @@ export function DecorStudio({ album, onClose }: Props) {
     }).catch(() => undefined)
     return () => { disposed = true; loaded.forEach((item) => URL.revokeObjectURL(item.url)) }
   }, [])
+
+  useEffect(() => {
+    preloadDecorImage(base?.url)
+    preloadDecorImage(collage.backgroundImageUrl)
+    stickers.forEach((sticker) => {
+      if (sticker.kind === 'image') preloadDecorImage(sticker.content)
+    })
+  }, [base?.url, collage.backgroundImageUrl, stickers])
 
   useEffect(() => {
     try {
@@ -417,8 +428,21 @@ export function DecorStudio({ album, onClose }: Props) {
       const canvas = mode === 'background'
         ? await renderCollage(base.url, stickers, collage)
         : await renderDecoratedStrip(base.url, stickers)
-      await downloadCanvas(canvas, mode === 'background' ? 'livegallery-collage' : 'livegallery-sticker')
-      setNotice('Ảnh đã được tải xuống.')
+      const outcome = await downloadCanvas(canvas, mode === 'background' ? 'livegallery-collage' : 'livegallery-sticker')
+      if (outcome.status === 'manual' && outcome.previewUrl) {
+        setManualSave({
+          file: outcome.file,
+          previewUrl: outcome.previewUrl,
+          canRetryShare: outcome.canRetryShare,
+        })
+        setNotice('Nhấn giữ ảnh hoặc bấm nút trên hộp thoại để lưu vào mục Ảnh.')
+      } else if (outcome.status === 'shared') {
+        setNotice('Chọn “Lưu hình ảnh” / “Ảnh” trên menu vừa mở để lưu vào bộ sưu tập Ảnh.')
+      } else if (outcome.status === 'cancelled') {
+        setNotice('')
+      } else {
+        setNotice('Ảnh đã được tải xuống.')
+      }
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Không thể tạo ảnh.') }
     finally { setBusy(false) }
   }
@@ -553,5 +577,10 @@ export function DecorStudio({ album, onClose }: Props) {
         {notice && <p className="decor-notice" role="status">{notice}</p>}
       </aside>
     </div>
+    <SavePhotoModal
+      item={manualSave}
+      onClose={() => setManualSave(null)}
+      onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+    />
   </section>
 }

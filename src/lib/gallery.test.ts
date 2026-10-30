@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildAlbumPath,
+  detectMobilePlatform,
   getShareCodeFromPath,
+  isMobileDevice,
+  normalizeMediaFileName,
   normalizeShareCode,
   parseManifest,
+  saveMediaFileToDevice,
 } from './gallery'
 
 describe('share code routing', () => {
@@ -85,5 +89,60 @@ describe('manifest parsing', () => {
     expect(() => parseManifest({ album: {}, items: [] })).toThrow(
       'Dữ liệu album chưa đầy đủ.',
     )
+  })
+})
+
+describe('mobile photo export helpers', () => {
+  it('detects iOS, iPadOS, Android, and desktop platforms accurately', () => {
+    expect(detectMobilePlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)', 5)).toBe('ios')
+    expect(detectMobilePlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5)).toBe('ios')
+    expect(detectMobilePlatform('Mozilla/5.0 (Linux; Android 14; Pixel 8)', 5)).toBe('android')
+    expect(detectMobilePlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 0)).toBe('desktop')
+    expect(isMobileDevice('Mozilla/5.0 (Linux; Android 14; SM-S928B)', 5)).toBe(true)
+    expect(isMobileDevice('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 0)).toBe(false)
+  })
+
+  it('normalizes media filenames to gallery-compatible extensions', () => {
+    expect(normalizeMediaFileName('photobooth.webp', 'image/jpeg')).toBe('photobooth.jpg')
+    expect(normalizeMediaFileName('khoanh-khac', 'image/jpeg')).toBe('khoanh-khac.jpg')
+    expect(normalizeMediaFileName('khoanh-khac.gif', 'image/gif')).toBe('khoanh-khac.gif')
+    expect(normalizeMediaFileName('  anh 01.png  ', 'image/png')).toBe('anh-01.png')
+  })
+
+  it('shares files directly on mobile without text fields so iOS and Android show Save to Photos', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const canShare = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)',
+      maxTouchPoints: 5,
+      share,
+      canShare,
+    })
+
+    const file = new File([new Uint8Array([255, 216, 255])], 'photobooth.jpg', { type: 'image/jpeg' })
+    const outcome = await saveMediaFileToDevice(file)
+
+    expect(outcome.status).toBe('shared')
+    expect(canShare).toHaveBeenCalledWith({ files: [file] })
+    expect(share).toHaveBeenCalledWith({ files: [file] })
+    vi.unstubAllGlobals()
+  })
+
+  it('returns manual photo-save fallback on mobile when Web Share activation expires instead of downloading to Files', async () => {
+    const notAllowed = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)',
+      maxTouchPoints: 5,
+      share: vi.fn().mockRejectedValue(notAllowed),
+      canShare: vi.fn().mockReturnValue(true),
+    })
+
+    const file = new File([new Uint8Array([255, 216, 255])], 'photobooth.jpg', { type: 'image/jpeg' })
+    const outcome = await saveMediaFileToDevice(file)
+
+    expect(outcome.status).toBe('manual')
+    expect(outcome.canRetryShare).toBe(true)
+    expect(outcome.previewUrl).toMatch(/^data:image\/jpeg;base64,/)
+    vi.unstubAllGlobals()
   })
 })
