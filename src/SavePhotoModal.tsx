@@ -50,20 +50,24 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
       >
         <div className="save-photo-modal__header">
           <div>
-            <p className="eyebrow">LƯU VỀ ĐIỆN THOẠI</p>
+            <p className="save-photo-modal__tag">LƯU VỀ ĐIỆN THOẠI</p>
             <h2 id="save-photo-title">Lưu vào mục Ảnh</h2>
           </div>
           <button
-            aria-label="Đóng"
+            aria-label="Đóng hộp thoại lưu ảnh"
             className="save-photo-modal__icon-close"
             onClick={onClose}
             type="button"
           >
-            ×
+            <span aria-hidden="true">×</span>
           </button>
         </div>
 
         <div className="save-photo-modal__frame">
+          <span className="vf-corner vf-corner--tl" aria-hidden="true" />
+          <span className="vf-corner vf-corner--tr" aria-hidden="true" />
+          <span className="vf-corner vf-corner--bl" aria-hidden="true" />
+          <span className="vf-corner vf-corner--br" aria-hidden="true" />
           <img
             alt={item.file.name}
             className="save-photo-modal__image"

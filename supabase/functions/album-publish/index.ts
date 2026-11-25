@@ -9,11 +9,11 @@ const maxFileBytes = 12 * 1024 * 1024
 // abuse ceiling, but do not stop a normal 50-person session after 12 albums.
 const uploadLimitPerHour = 120
 
-const expectedPhotoCount: Record<string, number> = {
-  strip3: 6,
-  strip4: 8,
-  grid4: 8,
-  polaroid: 2,
+const expectedPhotoCounts: Record<string, number[]> = {
+  strip3: [3, 6],
+  strip4: [4, 8],
+  grid4: [4, 8],
+  polaroid: [1, 2],
 }
 
 function allowedOrigin(origin: string | null) {
@@ -115,14 +115,14 @@ Deno.serve(async (request: Request) => {
   }
 
   const layoutId = String(form.get('layoutId') || '')
-  const requiredPhotos = expectedPhotoCount[layoutId]
+  const allowedPhotoCounts = expectedPhotoCounts[layoutId]
   const title = String(form.get('title') || '').trim().slice(0, 120)
   const message = String(form.get('message') || '').trim().slice(0, 500)
   const strip = form.get('strip')
   const loopGif = form.get('loopGif')
   const photos = form.getAll('photos').filter(isFile)
 
-  if (!requiredPhotos || photos.length !== requiredPhotos) {
+  if (!allowedPhotoCounts || !allowedPhotoCounts.includes(photos.length)) {
     return json({ error: 'Số lượng ảnh không khớp với bố cục.' }, 400, origin)
   }
   if (!isFile(strip) || !validFile(strip, ['image/jpeg', 'image/png', 'image/webp'])) {

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_COLLAGE,
+  FALLBACK_STICKERS,
+  STICKER_CATEGORIES,
   duplicatePlacedSticker,
   getStickerToolbarPosition,
   movePlacedSticker,
@@ -86,5 +89,17 @@ describe('mobile sticker interactions', () => {
     const middle = getStickerToolbarPosition({ x: .5, y: .5, size: .14 })
     expect(middle.placement).toBe('above')
     expect(middle.top).toBeLessThan(.5)
+  })
+
+  it('aligns fallback stickers, categories, flipX, and collage defaults with Photobooth', () => {
+    expect(STICKER_CATEGORIES.map((item) => item.id)).toEqual(['all', 'cute', 'nature', 'lucky', 'retro'])
+    expect(FALLBACK_STICKERS).toHaveLength(32)
+    expect(new Set(FALLBACK_STICKERS.map((item) => item.category))).toEqual(
+      new Set(['cute', 'nature', 'lucky', 'retro']),
+    )
+    expect(DEFAULT_COLLAGE.messagePosition).toBe('bottom')
+
+    const flipped = duplicatePlacedSticker({ ...sticker, flipX: true }, 'copy-flipped', 5)
+    expect(flipped.flipX).toBe(true)
   })
 })

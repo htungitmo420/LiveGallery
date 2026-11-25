@@ -7,10 +7,13 @@ import {
 export type DecorMode = 'stickers' | 'background'
 export type CollageFormat = 'landscape' | 'square' | 'portrait' | 'story'
 export type CollagePattern = 'solid' | 'dots' | 'grid'
+export type CollageMessagePosition = 'top' | 'bottom'
+export type StickerCategory = 'cute' | 'nature' | 'lucky' | 'retro'
 
 export interface DecorStickerAsset {
   id: string
   name: string
+  category?: string
   kind: 'emoji' | 'image'
   content: string
 }
@@ -21,6 +24,7 @@ export interface PlacedSticker extends DecorStickerAsset {
   y: number
   size: number
   rotation: number
+  flipX?: boolean
   zIndex: number
 }
 
@@ -113,6 +117,7 @@ export interface CollageSettings {
   pattern: CollagePattern
   message: string
   messageColor: string
+  messagePosition?: CollageMessagePosition
   items: CollageItem[]
 }
 
@@ -123,11 +128,44 @@ export const COLLAGE_FORMATS: Array<{ id: CollageFormat; label: string; width: n
   { id: 'story', label: '9:16', width: 1440, height: 2560 },
 ]
 
-export const FALLBACK_STICKERS: DecorStickerAsset[] = [
-  ['rabbit', 'Thỏ', '🐰'], ['bear', 'Gấu', '🧸'], ['bow', 'Nơ', '🎀'], ['heart', 'Trái tim', '💗'],
-  ['chick', 'Gà con', '🐥'], ['cat', 'Mèo', '🐱'], ['flower', 'Hoa', '🌸'], ['sparkle', 'Lấp lánh', '✨'],
-  ['clover', 'Cỏ may mắn', '🍀'], ['cherry', 'Anh đào', '🍒'], ['sun', 'Mặt trời', '☀️'], ['rainbow', 'Cầu vồng', '🌈'],
-].map(([id, name, content]) => ({ id: `emoji-${id}`, name, content, kind: 'emoji' }))
+export const STICKER_CATEGORIES: Array<{ id: 'all' | StickerCategory; name: string }> = [
+  { id: 'all', name: 'Tất cả' },
+  { id: 'cute', name: 'Dễ thương' },
+  { id: 'nature', name: 'Thiên nhiên' },
+  { id: 'lucky', name: 'May mắn' },
+  { id: 'retro', name: 'Retro' },
+]
+
+const STICKER_GROUPS: Record<StickerCategory, Array<[string, string, string]>> = {
+  cute: [
+    ['rabbit', 'Thỏ', '🐰'], ['bear', 'Gấu', '🧸'], ['bow', 'Nơ', '🎀'], ['heart', 'Trái tim', '💗'],
+    ['chick', 'Gà con', '🐥'], ['cat', 'Mèo', '🐱'], ['flower-face', 'Hoa đào', '🌸'], ['sparkle-heart', 'Tim lấp lánh', '💖'],
+  ],
+  nature: [
+    ['clover', 'Cỏ may mắn', '🍀'], ['flower', 'Hoa cúc', '🌼'], ['cherry', 'Anh đào', '🍒'], ['leaf', 'Lá cây', '🌿'],
+    ['sun', 'Mặt trời', '☀️'], ['rainbow', 'Cầu vồng', '🌈'], ['cloud', 'Mây', '☁️'], ['butterfly', 'Bướm', '🦋'],
+  ],
+  lucky: [
+    ['mushroom', 'Nấm', '🍄'], ['dice', 'Xúc xắc', '🎲'], ['horseshoe', 'Nam châm', '🧲'], ['crystal', 'Kim cương', '💎'],
+    ['key', 'Chìa khóa', '🗝️'], ['eight-ball', 'Bi số 8', '🎱'], ['red-envelope', 'Lì xì', '🧧'], ['fortune', 'Bánh may mắn', '🥠'],
+  ],
+  retro: [
+    ['camera', 'Máy ảnh', '📷'], ['cassette', 'Băng cassette', '📼'], ['disc', 'Đĩa CD', '💿'], ['game', 'Tay cầm game', '🎮'],
+    ['phone', 'Điện thoại cổ', '☎️'], ['glasses', 'Kính mát', '🕶️'], ['roller', 'Giày patin', '🛼'], ['lightning', 'Tia chớp', '⚡'],
+  ],
+}
+
+export const FALLBACK_STICKERS: DecorStickerAsset[] = (
+  Object.entries(STICKER_GROUPS) as Array<[StickerCategory, Array<[string, string, string]>]>
+).flatMap(([category, items]) =>
+  items.map(([id, name, content]) => ({
+    id: `emoji-${category}-${id}`,
+    name,
+    category,
+    content,
+    kind: 'emoji' as const,
+  })),
+)
 
 export const DEFAULT_COLLAGE: CollageSettings = {
   format: 'story',
@@ -135,6 +173,7 @@ export const DEFAULT_COLLAGE: CollageSettings = {
   pattern: 'solid',
   message: '',
   messageColor: '#ffffff',
+  messagePosition: 'bottom',
   items: [{ id: 'strip-main', x: .5, y: .5, width: .42, rotation: 0, zIndex: 1 }],
 }
 
@@ -191,6 +230,7 @@ export async function renderDecoratedStrip(source: string, stickers: PlacedStick
       context.save()
       context.translate(sticker.x * canvas.width, sticker.y * canvas.height)
       context.rotate(sticker.rotation * Math.PI / 180)
+      context.scale(sticker.flipX ? -1 : 1, 1)
       if (image) context.drawImage(image, -size / 2, -size / 2, size, size)
       else {
         context.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`
@@ -261,13 +301,42 @@ export async function renderCollage(source: string, stickers: PlacedSticker[], s
   })
   const message = settings.message.trim()
   if (message) {
-    context.fillStyle = settings.messageColor
+    const fontSize = Math.max(30, canvas.width * .045)
+    const maxWidth = canvas.width * .84
+    const words = message.slice(0, 80).split(/\s+/)
+    const lines: string[] = []
+    let line = ''
+
+    context.save()
+    context.font = `700 ${fontSize}px system-ui, sans-serif`
     context.textAlign = 'center'
-    context.textBaseline = 'bottom'
-    context.font = `700 ${Math.max(30, canvas.width * .045)}px system-ui, sans-serif`
+    context.textBaseline = 'middle'
+    context.fillStyle = settings.messageColor
     context.shadowColor = 'rgba(0,0,0,.4)'
     context.shadowBlur = Math.max(5, canvas.width * .005)
-    context.fillText(message.slice(0, 80), canvas.width / 2, canvas.height * .95, canvas.width * .86)
+    context.shadowOffsetY = Math.max(2, canvas.width * .002)
+
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word
+      if (line && context.measureText(candidate).width > maxWidth && lines.length < 2) {
+        lines.push(line)
+        line = word
+      } else {
+        line = candidate
+      }
+    })
+    if (line) lines.push(line)
+
+    const lineHeight = fontSize * 1.18
+    const blockHeight = lineHeight * lines.length
+    const isTop = settings.messagePosition === 'top'
+    const anchorY = isTop ? canvas.height * .07 : canvas.height * .93
+    const startY = isTop ? anchorY : anchorY - blockHeight + lineHeight
+
+    lines.slice(0, 3).forEach((text, index) => {
+      context.fillText(text, canvas.width / 2, startY + index * lineHeight, maxWidth)
+    })
+    context.restore()
   }
   return canvas
 }

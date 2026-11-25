@@ -2,14 +2,29 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#fbf6ee" />
-    <meta name="description" content="Xem, phát lại và tải những khoảnh khắc từ Khoảnh Khắc Photobooth." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#11100f" />
+    <meta name="description" content="Xem, trang trí và tải những khoảnh khắc từ Khoảnh Khắc Photobooth." />
     <meta property="og:title" content="Khoảnh Khắc Live Gallery" />
-    <meta property="og:description" content="Album ảnh và video từ Khoảnh Khắc Photobooth." />
+    <meta property="og:description" content="Album ảnh và GIF từ Khoảnh Khắc Photobooth." />
     <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Khoảnh Khắc Live Gallery</title>
+    <script>
+      try {
+        if (localStorage.getItem('khoanhkhac-theme') === 'light') {
+          document.documentElement.dataset.theme = 'light'
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', '#f3efe6')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
