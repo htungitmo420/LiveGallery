@@ -1,14 +1,15 @@
 import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react'
 import './App.css'
-import { DecorStudio } from './DecorStudio'
-import { SavePhotoModal, type ManualSaveState } from './SavePhotoModal'
+import type { ManualSaveState } from './SavePhotoModal'
 import {
   buildAlbumPath,
   downloadGalleryMedia,
@@ -20,6 +21,10 @@ import {
   type GalleryMedia,
   type SaveMediaOutcome,
 } from './lib/gallery'
+
+const loadDecorStudio = () => import('./DecorStudio').then((mod) => ({ default: mod.DecorStudio }))
+const DecorStudio = lazy(loadDecorStudio)
+const SavePhotoModal = lazy(() => import('./SavePhotoModal').then((mod) => ({ default: mod.SavePhotoModal })))
 
 type ThemeMode = 'dark' | 'light'
 
@@ -477,16 +482,27 @@ function MediaView({
   onError: () => void
   onLoad: () => void
 }) {
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const el = imgRef.current
+    if (el && el.complete && el.naturalWidth > 0) {
+      onLoad()
+    }
+  }, [item.url, onLoad])
+
   return (
     <img
       alt={`${albumTitle} - ${item.fileName}`}
       className="viewer__media"
       crossOrigin="anonymous"
+      decoding="async"
       draggable={false}
       fetchPriority="high"
       height={item.height ?? undefined}
       onError={onError}
       onLoad={onLoad}
+      ref={imgRef}
       src={item.url}
       width={item.width ?? undefined}
     />
@@ -505,6 +521,7 @@ function AlbumViewer({
   onToggleTheme: () => void
 }) {
   const [activeIndex, setActiveIndex] = useState(0)
+  const [loadedAlbumCode, setLoadedAlbumCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [decorating, setDecorating] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -514,14 +531,31 @@ function AlbumViewer({
   const pointerStart = useRef<number | null>(null)
   const refreshedBrokenMedia = useRef(false)
   const current = album.items[activeIndex]
+  const heroLoaded = loadedAlbumCode === album.shareCode
 
   useEffect(() => {
     recordRecentAlbum(album)
   }, [album])
 
+  // Wait until the hero image finishes painting before warming the download cache or idle-prefetching DecorStudio,
+  // so nothing competes with the hero image for bandwidth on 4G connections.
   useEffect(() => {
+    if (!heroLoaded) return
     preloadGalleryMedia(current)
-  }, [current])
+  }, [current, heroLoaded])
+
+  useEffect(() => {
+    if (!heroLoaded) return
+    const timer = window.setTimeout(() => {
+      void loadDecorStudio()
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [heroLoaded])
+
+  const handleHeroLoad = useCallback(() => {
+    refreshedBrokenMedia.current = false
+    setLoadedAlbumCode(album.shareCode)
+  }, [album.shareCode])
 
   const move = useCallback(
     (direction: -1 | 1) => {
@@ -634,7 +668,21 @@ function AlbumViewer({
           </div>
         </header>
         <main className="gallery__decor-main">
-          <DecorStudio album={album} onClose={() => setDecorating(false)} />
+          <Suspense
+            fallback={(
+              <div className="status-card" style={{ margin: '48px auto' }}>
+                <div className="film-loader" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <h1>Đang mở phòng trang trí...</h1>
+              </div>
+            )}
+          >
+            <DecorStudio album={album} onClose={() => setDecorating(false)} />
+          </Suspense>
         </main>
       </div>
     )
@@ -660,6 +708,8 @@ function AlbumViewer({
             aria-label="Trang trí ảnh"
             className="icon-button icon-button--decor"
             onClick={() => setDecorating(true)}
+            onFocus={() => void loadDecorStudio()}
+            onPointerEnter={() => void loadDecorStudio()}
             type="button"
           >
             <Icon name="decor" size={17} />
@@ -739,9 +789,7 @@ function AlbumViewer({
                 albumTitle={album.title}
                 item={current}
                 onError={refreshBrokenMedia}
-                onLoad={() => {
-                  refreshedBrokenMedia.current = false
-                }}
+                onLoad={handleHeroLoad}
               />
 
               {album.items.length > 1 && (
@@ -777,27 +825,40 @@ function AlbumViewer({
 
             <div className="filmstrip-rail">
               <div className="thumbnail-row" role="list" aria-label="Danh sách khung ảnh 35mm">
-                {album.items.map((item, index) => (
-                  <button
-                    aria-current={index === activeIndex}
-                    aria-label={`Xem khung ảnh ${padFrame(index + 1)}`}
-                    className="thumbnail"
-                    key={item.id}
-                    onClick={() => setActiveIndex(index)}
-                    role="listitem"
-                    type="button"
-                  >
-                    <img
-                      alt=""
-                      crossOrigin="anonymous"
-                      height={56}
-                      loading="lazy"
-                      src={item.thumbnailUrl ?? item.url}
-                      width={74}
-                    />
-                    <span className="thumbnail__num" aria-hidden="true">{padFrame(index + 1)}</span>
-                  </button>
-                ))}
+                {album.items.map((item, index) => {
+                  const isActive = index === activeIndex
+                  const isUnthumbnailedGif = item.kind === 'gif' && !item.thumbnailUrl
+                  const shouldLoadThumb = isActive || (heroLoaded && !isUnthumbnailedGif)
+                  return (
+                    <button
+                      aria-current={isActive}
+                      aria-label={`Xem khung ảnh ${padFrame(index + 1)}`}
+                      className="thumbnail"
+                      key={item.id}
+                      onClick={() => setActiveIndex(index)}
+                      role="listitem"
+                      type="button"
+                    >
+                      {shouldLoadThumb ? (
+                        <img
+                          alt=""
+                          crossOrigin="anonymous"
+                          decoding="async"
+                          fetchPriority={isActive ? 'high' : 'low'}
+                          height={56}
+                          loading={isActive ? 'eager' : 'lazy'}
+                          src={item.thumbnailUrl ?? item.url}
+                          width={74}
+                        />
+                      ) : isUnthumbnailedGif ? (
+                        <span className="thumbnail__gif" aria-hidden="true">GIF</span>
+                      ) : (
+                        <span className="thumbnail__placeholder" aria-hidden="true" />
+                      )}
+                      <span className="thumbnail__num" aria-hidden="true">{padFrame(index + 1)}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </>
@@ -818,11 +879,15 @@ function AlbumViewer({
         </a>
       </footer>
 
-      <SavePhotoModal
-        item={manualSave}
-        onClose={() => setManualSave(null)}
-        onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
-      />
+      {manualSave && (
+        <Suspense fallback={null}>
+          <SavePhotoModal
+            item={manualSave}
+            onClose={() => setManualSave(null)}
+            onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
@@ -851,7 +916,7 @@ function AlbumRoute({
   }, [code])
 
   const refresh = useCallback(async () => {
-    const next = await fetchAlbum(code)
+    const next = await fetchAlbum(code, undefined, { bypassCache: true })
     setAlbum(next)
     return next
   }, [code])

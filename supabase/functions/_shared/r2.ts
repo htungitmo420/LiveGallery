@@ -49,6 +49,7 @@ export interface SigV4PresignInput {
   secretAccessKey: string
   expiresInSeconds: number
   signedHeaders: Record<string, string>
+  queryParams?: Record<string, string>
   now?: Date
 }
 
@@ -73,6 +74,7 @@ export interface PresignPutOptions {
 export interface PresignGetOptions {
   key: string
   expiresInSeconds?: number
+  responseCacheControl?: string
   now?: Date
   config?: R2Config
 }
@@ -109,6 +111,9 @@ function defaultEnvGetter(name: string): string | undefined {
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  if (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer) {
+    return bytes.buffer
+  }
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   return copy.buffer
@@ -312,16 +317,30 @@ function buildCanonicalHeaders(headers: Record<string, string>): {
   return { canonicalHeaders, signedHeaders }
 }
 
+const signingKeyCache = new Map<string, Uint8Array>()
+const MAX_SIGNING_KEY_CACHE_SIZE = 8
+
 export async function deriveSigningKey(
   secretAccessKey: string,
   dateStamp: string,
   region: string,
   service: string,
 ): Promise<Uint8Array> {
+  const cacheKey = `${dateStamp}|${region}|${service}|${secretAccessKey}`
+  const cached = signingKeyCache.get(cacheKey)
+  if (cached) return cached
+
   const kDate = await hmacSha256(utf8(`AWS4${secretAccessKey}`), dateStamp)
   const kRegion = await hmacSha256(kDate, region)
   const kService = await hmacSha256(kRegion, service)
-  return hmacSha256(kService, 'aws4_request')
+  const derived = await hmacSha256(kService, 'aws4_request')
+
+  if (signingKeyCache.size >= MAX_SIGNING_KEY_CACHE_SIZE) {
+    const oldest = signingKeyCache.keys().next().value
+    if (oldest !== undefined) signingKeyCache.delete(oldest)
+  }
+  signingKeyCache.set(cacheKey, derived)
+  return derived
 }
 
 export async function buildSigV4PresignedUrl(input: SigV4PresignInput): Promise<SigV4PresignResult> {
@@ -339,6 +358,7 @@ export async function buildSigV4PresignedUrl(input: SigV4PresignInput): Promise<
     ['X-Amz-Date', amzDate],
     ['X-Amz-Expires', String(input.expiresInSeconds)],
     ['X-Amz-SignedHeaders', signedHeaders],
+    ...Object.entries(input.queryParams ?? {}),
   ]
 
   const canonicalQueryString = queryParams
@@ -503,6 +523,10 @@ export async function createR2PresignedGetUrl(options: PresignGetOptions): Promi
   const host = `${config.accountId}.r2.cloudflarestorage.com`
   const canonicalUri = `/${encodeRfc3986(config.bucketName)}/${encodedKey}`
 
+  const queryParams = options.responseCacheControl
+    ? { 'response-cache-control': normalizeHeaderValue(options.responseCacheControl) }
+    : undefined
+
   const signed = await buildSigV4PresignedUrl({
     method: 'GET',
     host,
@@ -513,6 +537,7 @@ export async function createR2PresignedGetUrl(options: PresignGetOptions): Promi
     secretAccessKey: config.secretAccessKey,
     expiresInSeconds,
     signedHeaders: {},
+    queryParams,
     now: options.now,
   })
 

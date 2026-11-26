@@ -31,6 +31,12 @@ import {
   type R2Config,
   type UploadManifestFile,
 } from '../../supabase/functions/_shared/r2.ts'
+import {
+  buildStoragePublicUrl,
+  createStorageSignedUrl,
+  postgrestRpc,
+  postgrestSelect,
+} from '../../supabase/functions/_shared/supabase-rest.ts'
 
 const TEST_R2_CONFIG: R2Config = {
   accountId: '0123456789abcdef0123456789abcdef',
@@ -124,9 +130,10 @@ describe('AWS SigV4 signing & Cloudflare R2 presigned URLs', () => {
     expect(url).not.toContain(TEST_R2_CONFIG.secretAccessKey)
   })
 
-  it('generates R2 presigned GET URLs with 1-hour default TTL and rejects unsafe keys', async () => {
+  it('generates R2 presigned GET URLs with 1-hour default TTL, optional response-cache-control, and rejects unsafe keys', async () => {
     const url = await createR2PresignedGetUrl({
       key: `${TEST_ALBUM_ID}/${TEST_FILE_2}.gif`,
+      responseCacheControl: 'private, max-age=3600, immutable',
       now: new Date('2026-11-26T12:00:00.000Z'),
       config: TEST_R2_CONFIG,
     })
@@ -134,6 +141,7 @@ describe('AWS SigV4 signing & Cloudflare R2 presigned URLs', () => {
     const parsed = new URL(url)
     expect(parsed.searchParams.get('X-Amz-Expires')).toBe('3600')
     expect(parsed.searchParams.get('X-Amz-SignedHeaders')).toBe('host')
+    expect(parsed.searchParams.get('response-cache-control')).toBe('private, max-age=3600, immutable')
     expect(parsed.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/)
 
     await expect(
@@ -533,6 +541,45 @@ describe('Vercel deployment & CSP configuration integrity', () => {
     expect(assetRule?.headers).toContainEqual({
       key: 'Cache-Control',
       value: 'public, max-age=31536000, immutable',
+    })
+  })
+})
+
+describe('Lightweight Supabase REST client (zero-npm Edge Function helpers)', () => {
+  const restConfig = {
+    url: 'https://proj.supabase.co/',
+    serviceRoleKey: 'service-role-test-key',
+  }
+
+  it('executes PostgREST select and RPC with service-role auth headers', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: '1' }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify('ok'), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const selected = await postgrestSelect<Array<{ id: string }>>(restConfig, 'photobooth_albums', 'select=id&limit=1')
+    expect(selected).toEqual({ data: [{ id: '1' }], error: null })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://proj.supabase.co/rest/v1/photobooth_albums?select=id&limit=1')
+
+    const rpc = await postgrestRpc<string>(restConfig, 'finalize_album_publish', { p_album_id: TEST_ALBUM_ID })
+    expect(rpc).toEqual({ data: 'ok', error: null })
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://proj.supabase.co/rest/v1/rpc/finalize_album_publish')
+  })
+
+  it('builds public URLs and resolves relative signed storage URLs cleanly', async () => {
+    expect(buildStoragePublicUrl(restConfig, 'photobooth-background', '/folder/paper 1.jpg')).toBe(
+      'https://proj.supabase.co/storage/v1/object/public/photobooth-background/folder/paper%201.jpg',
+    )
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ signedURL: '/object/sign/photobooth-albums/a/b.jpg?token=xyz' }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const signed = await createStorageSignedUrl(restConfig, 'photobooth-albums', 'a/b.jpg', 3600)
+    expect(signed).toEqual({
+      data: 'https://proj.supabase.co/storage/v1/object/sign/photobooth-albums/a/b.jpg?token=xyz',
+      error: null,
     })
   })
 })

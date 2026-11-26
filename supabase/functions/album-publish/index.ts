@@ -1,5 +1,4 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN,
   R2_STORAGE_PREFIX,
@@ -7,7 +6,6 @@ import {
   createUploadToken,
   deleteR2Object,
   hasControlChars,
-  hasR2StorageCapacity,
   headR2Object,
   hmacSha256Hex,
   isAllowedOrigin,
@@ -23,13 +21,22 @@ import {
   type UploadFileRole,
   type UploadManifestFile,
 } from '../_shared/r2.ts'
+import {
+  postgrestDelete,
+  postgrestRpc,
+  postgrestSelect,
+  removeStorageObjects,
+  uploadStorageObject,
+  type SupabaseRestConfig,
+} from '../_shared/supabase-rest.ts'
 
 const bucket = 'photobooth-albums'
 const defaultGalleryBaseUrl = 'https://livegallery.nhtisitmo.workers.dev'
 const maxRequestBytes = 60 * 1024 * 1024
 const maxFileBytes = 12 * 1024 * 1024
 const maxJsonBodyBytes = 64 * 1024
-const uploadConcurrency = 5
+// Upload/HEAD all album files (up to 10-12 files) in a single parallel wave instead of 2 waves.
+const r2ParallelConcurrency = 12
 const presignedPutTtlSeconds = 300
 const uploadTokenTtlMs = 10 * 60 * 1000
 // High-throughput event ceiling for 150+ continuous guests sharing one venue Wi-Fi IP.
@@ -46,6 +53,21 @@ const imageMimeTypes = ['image/jpeg', 'image/png', 'image/webp']
 const gifMimeTypes = ['image/gif']
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const textEncoder = new TextEncoder()
+
+const r2QuotaExceededError = 'Bộ nhớ lưu trữ ảnh đã đạt giới hạn tối đa. Tạm ngừng nhận album mới.'
+const r2QuotaLookupError = 'Không thể kiểm tra hạn mức bộ nhớ lưu trữ lúc này.'
+
+interface BeginUploadRow {
+  status: 'ok' | 'rate_limited' | 'quota_exceeded'
+  album_id: string | null
+  share_code: string | null
+}
+
+interface DraftAlbumRow {
+  id: string
+  share_code: string
+  status: string
+}
 
 function resolveGalleryBaseUrl(): string {
   const raw = Deno.env.get('LIVE_GALLERY_URL')?.trim()
@@ -75,18 +97,26 @@ function cors(origin: string | null, allowedOrigins: readonly string[]) {
     'Access-Control-Allow-Headers': 'apikey, content-type, x-client-info, x-photobooth-client',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
+    'Access-Control-Expose-Headers': 'Server-Timing',
     'Vary': 'Origin',
     'X-Content-Type-Options': 'nosniff',
   }
 }
 
-function json(body: unknown, status: number, origin: string | null, allowedOrigins: readonly string[]) {
+function json(
+  body: unknown,
+  status: number,
+  origin: string | null,
+  allowedOrigins: readonly string[],
+  extraHeaders?: Record<string, string>,
+) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...cors(origin, allowedOrigins),
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...(extraHeaders ?? {}),
     },
   })
 }
@@ -131,9 +161,18 @@ async function hashClient(request: Request, secret: string): Promise<string> {
 
 async function cleanupR2Keys(keys: readonly string[]): Promise<void> {
   if (keys.length === 0) return
-  await runWithConcurrency(keys, uploadConcurrency, async (key) => {
+  await runWithConcurrency(keys, r2ParallelConcurrency, async (key) => {
     await deleteR2Object(key).catch(() => undefined)
   })
+}
+
+async function deleteDraftAlbum(dbConfig: SupabaseRestConfig, albumId: string): Promise<boolean> {
+  const { data } = await postgrestDelete<Array<{ id: string }>>(
+    dbConfig,
+    'photobooth_albums',
+    `id=eq.${encodeURIComponent(albumId)}&status=eq.draft&select=id`,
+  )
+  return Boolean(data && data.length > 0)
 }
 
 function buildAlbumShareUrl(galleryBaseUrl: string, shareCode: string): string {
@@ -262,51 +301,8 @@ function validateCompleteFiles(
   return { ok: true, files: validated.sort((a, b) => a.index - b.index) }
 }
 
-async function checkRateLimit(
-  admin: ReturnType<typeof createClient>,
-  clientHash: string,
-): Promise<{ allowed: boolean; lookupFailed: boolean }> {
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const { count, error } = await admin
-    .from('photobooth_album_upload_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('client_hash', clientHash)
-    .gte('created_at', oneHourAgo)
-  if (error) {
-    console.error('Rate limit lookup failed')
-    return { allowed: false, lookupFailed: true }
-  }
-  return { allowed: (count ?? 0) < uploadLimitPerHour, lookupFailed: false }
-}
-
-const r2QuotaExceededError = 'Bộ nhớ lưu trữ ảnh đã đạt giới hạn tối đa. Tạm ngừng nhận album mới.'
-const r2QuotaLookupError = 'Không thể kiểm tra hạn mức bộ nhớ lưu trữ lúc này.'
-
-async function checkR2StorageQuota(
-  admin: ReturnType<typeof createClient>,
-  incomingBytes: number,
-): Promise<{ allowed: boolean; lookupFailed: boolean }> {
-  const maxBytes = parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES'))
-  if (maxBytes <= 0) {
-    return { allowed: false, lookupFailed: false }
-  }
-  const { data, error } = await admin.rpc('get_active_r2_storage_bytes')
-  if (error) {
-    console.error('R2 storage quota lookup failed')
-    return { allowed: false, lookupFailed: true }
-  }
-  const usedBytes = typeof data === 'number' ? data : Number(data)
-  if (!Number.isFinite(usedBytes) || usedBytes < 0) {
-    console.error('R2 storage quota returned invalid byte count')
-    return { allowed: false, lookupFailed: true }
-  }
-  return {
-    allowed: hasR2StorageCapacity(usedBytes, incomingBytes, maxBytes),
-    lookupFailed: false,
-  }
-}
-
 Deno.serve(async (request: Request) => {
+  const startedAt = performance.now()
   const origin = request.headers.get('origin')
   const allowedOrigins = getAllowedOrigins()
 
@@ -327,9 +323,7 @@ Deno.serve(async (request: Request) => {
   }
 
   const galleryBaseUrl = resolveGalleryBaseUrl()
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
+  const dbConfig: SupabaseRestConfig = { url: supabaseUrl, serviceRoleKey }
   const baseContentType = normalizeMimeType(request.headers.get('content-type') || '')
 
   // Flow A: JSON R2 Direct Parallel Upload (init / complete / abort)
@@ -367,15 +361,12 @@ Deno.serve(async (request: Request) => {
         return json({ mode: 'multipart' }, 200, origin, allowedOrigins)
       }
 
-      const clientHash = await hashClient(request, serviceRoleKey)
-      const rate = await checkRateLimit(admin, clientHash)
-      if (rate.lookupFailed) {
-        return json({ error: 'Không thể bắt đầu tải album.' }, 500, origin, allowedOrigins)
-      }
-      if (!rate.allowed) {
-        return json({ error: 'Thiết bị đã tạo quá nhiều album. Hãy thử lại sau một giờ.' }, 429, origin, allowedOrigins)
+      const maxR2Bytes = parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES'))
+      if (maxR2Bytes <= 0) {
+        return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
       }
 
+      // Validate payload before touching the database.
       const layoutId = typeof payload.layoutId === 'string' ? payload.layoutId : ''
       const title = typeof payload.title === 'string' ? payload.title.trim().slice(0, 120) : ''
       const message = typeof payload.message === 'string' ? payload.message.trim().slice(0, 500) : ''
@@ -384,45 +375,48 @@ Deno.serve(async (request: Request) => {
         return json({ error: validation.error }, validation.status, origin, allowedOrigins)
       }
 
-      const storageQuota = await checkR2StorageQuota(admin, validation.totalBytes)
-      if (storageQuota.lookupFailed) {
+      const clientHash = await hashClient(request, serviceRoleKey)
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+      // Single atomic RPC: rate limit + R2 storage hard cap + create draft + log upload event.
+      const dbStart = performance.now()
+      const beginResult = await postgrestRpc<BeginUploadRow[]>(dbConfig, 'begin_album_upload', {
+        p_client_hash: clientHash,
+        p_upload_limit: uploadLimitPerHour,
+        p_title: title || 'Khoảnh khắc của bạn',
+        p_message: message || null,
+        p_expires_at: expiresAt,
+        p_incoming_bytes: validation.totalBytes,
+        p_max_r2_bytes: maxR2Bytes,
+      })
+      const dbDuration = performance.now() - dbStart
+
+      if (beginResult.error) {
+        console.error('begin_album_upload RPC failed during init')
         return json({ error: r2QuotaLookupError }, 503, origin, allowedOrigins)
       }
-      if (!storageQuota.allowed) {
+
+      const row = beginResult.data?.[0]
+      if (!row) {
+        return json({ error: 'Không thể tạo album.' }, 500, origin, allowedOrigins)
+      }
+      if (row.status === 'rate_limited') {
+        return json({ error: 'Thiết bị đã tạo quá nhiều album. Hãy thử lại sau một giờ.' }, 429, origin, allowedOrigins)
+      }
+      if (row.status === 'quota_exceeded') {
         return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
       }
-
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      const { data: album, error: albumError } = await admin
-        .from('photobooth_albums')
-        .insert({
-          title: title || 'Khoảnh khắc của bạn',
-          message: message || null,
-          status: 'draft',
-          expires_at: expiresAt,
-        })
-        .select('id, share_code')
-        .single()
-
-      if (albumError || !album) {
-        console.error('Album draft creation failed')
+      if (row.status !== 'ok' || !row.album_id || !row.share_code) {
         return json({ error: 'Không thể tạo album.' }, 500, origin, allowedOrigins)
       }
 
-      // Charge rate-limit quota immediately when minting draft + presigned PUT URLs
-      // (ON DELETE SET NULL keeps this event row even if the draft is later aborted).
-      const { error: eventError } = await admin
-        .from('photobooth_album_upload_events')
-        .insert({ client_hash: clientHash, album_id: album.id })
-      if (eventError) {
-        console.error('Upload event logging failed during init')
-        await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
-        return json({ error: 'Không thể khởi tạo phiên tải album.' }, 500, origin, allowedOrigins)
-      }
+      const albumId = row.album_id
+      const shareCode = row.share_code
 
       try {
+        const signStart = performance.now()
         const planned = validation.files.map((file) => {
-          const objectKey = `${album.id}/${crypto.randomUUID()}.${extensionForMime(file.mimeType)}`
+          const objectKey = `${albumId}/${crypto.randomUUID()}.${extensionForMime(file.mimeType)}`
           return {
             ...file,
             objectKey,
@@ -430,24 +424,7 @@ Deno.serve(async (request: Request) => {
           }
         })
 
-        const uploads = await Promise.all(planned.map(async (item) => {
-          const putUrl = await createR2PresignedPutUrl({
-            key: item.objectKey,
-            contentType: item.mimeType,
-            contentLength: item.byteSize,
-            expiresInSeconds: presignedPutTtlSeconds,
-          })
-          return {
-            index: item.index,
-            role: item.role,
-            name: item.name,
-            mimeType: item.mimeType,
-            putUrl,
-            storagePath: item.storagePath,
-          }
-        }))
-
-        const manifestFiles: UploadManifestFile[] = uploads.map((item) => ({
+        const manifestFiles: UploadManifestFile[] = planned.map((item) => ({
           index: item.index,
           role: item.role,
           name: item.name,
@@ -455,25 +432,53 @@ Deno.serve(async (request: Request) => {
           storagePath: item.storagePath,
         }))
 
-        const { token: uploadToken } = await createUploadToken({
-          albumId: album.id,
-          shareCode: album.share_code,
-          files: manifestFiles,
-          secret: serviceRoleKey,
-          ttlMs: uploadTokenTtlMs,
-        })
+        const [uploads, tokenBundle] = await Promise.all([
+          Promise.all(planned.map(async (item) => {
+            const putUrl = await createR2PresignedPutUrl({
+              key: item.objectKey,
+              contentType: item.mimeType,
+              contentLength: item.byteSize,
+              expiresInSeconds: presignedPutTtlSeconds,
+            })
+            return {
+              index: item.index,
+              role: item.role,
+              name: item.name,
+              mimeType: item.mimeType,
+              putUrl,
+              storagePath: item.storagePath,
+            }
+          })),
+          createUploadToken({
+            albumId,
+            shareCode,
+            files: manifestFiles,
+            secret: serviceRoleKey,
+            ttlMs: uploadTokenTtlMs,
+          }),
+        ])
+        const signDuration = performance.now() - signStart
+        const totalDuration = performance.now() - startedAt
 
-        return json({
-          mode: 'r2-direct',
-          albumId: album.id,
-          shareCode: album.share_code,
-          url: buildAlbumShareUrl(galleryBaseUrl, album.share_code),
-          uploadToken,
-          uploads,
-        }, 200, origin, allowedOrigins)
+        return json(
+          {
+            mode: 'r2-direct',
+            albumId,
+            shareCode,
+            url: buildAlbumShareUrl(galleryBaseUrl, shareCode),
+            uploadToken: tokenBundle.token,
+            uploads,
+          },
+          200,
+          origin,
+          allowedOrigins,
+          {
+            'Server-Timing': `db-init;dur=${dbDuration.toFixed(1)}, sign;dur=${signDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+          },
+        )
       } catch {
         console.error('R2 presign init failed')
-        await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
+        await deleteDraftAlbum(dbConfig, albumId)
         return json({ error: 'Không thể khởi tạo phiên tải album.' }, 500, origin, allowedOrigins)
       }
     }
@@ -495,16 +500,19 @@ Deno.serve(async (request: Request) => {
       }
       const submittedFiles = fileValidation.files
 
-      const { data: album, error: lookupError } = await admin
-        .from('photobooth_albums')
-        .select('id, share_code, status')
-        .eq('id', albumId)
-        .maybeSingle()
+      const lookupStart = performance.now()
+      const albumResult = await postgrestSelect<DraftAlbumRow[]>(
+        dbConfig,
+        'photobooth_albums',
+        `select=id,share_code,status&id=eq.${encodeURIComponent(albumId)}&limit=1`,
+      )
+      const lookupDuration = performance.now() - lookupStart
 
-      if (lookupError) {
+      if (albumResult.error) {
         console.error('Album lookup failed during complete')
         return json({ error: 'Không thể hoàn tất tải album.' }, 500, origin, allowedOrigins)
       }
+      const album = albumResult.data?.[0]
       if (!album || album.status !== 'draft') {
         return json({ error: 'Phiên tải album không hợp lệ hoặc đã hết hạn.' }, 403, origin, allowedOrigins)
       }
@@ -523,8 +531,9 @@ Deno.serve(async (request: Request) => {
       const objectKeys = submittedFiles.map((file) => stripR2Prefix(file.storagePath))
       let verifiedSizes: number[]
       let totalActualBytes = 0
+      const headStart = performance.now()
       try {
-        const headResults = await runWithConcurrency(submittedFiles, uploadConcurrency, async (file) => {
+        const headResults = await runWithConcurrency(submittedFiles, r2ParallelConcurrency, async (file) => {
           const head = await headR2Object(stripR2Prefix(file.storagePath))
           return { file, head }
         })
@@ -551,75 +560,68 @@ Deno.serve(async (request: Request) => {
         }
 
         if (invalidUpload || totalActualBytes > maxRequestBytes) {
-          await cleanupR2Keys(objectKeys)
-          await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
+          await Promise.allSettled([cleanupR2Keys(objectKeys), deleteDraftAlbum(dbConfig, album.id)])
           return json({ error: 'Tệp ảnh chưa được tải lên đầy đủ hoặc không hợp lệ.' }, 400, origin, allowedOrigins)
         }
       } catch {
         console.error('R2 HEAD verification failed')
-        await cleanupR2Keys(objectKeys)
-        await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
+        await Promise.allSettled([cleanupR2Keys(objectKeys), deleteDraftAlbum(dbConfig, album.id)])
         return json({ error: 'Không thể xác minh tệp ảnh đã tải lên.' }, 400, origin, allowedOrigins)
       }
+      const headDuration = performance.now() - headStart
 
-      const completeQuota = await checkR2StorageQuota(admin, totalActualBytes)
-      if (completeQuota.lookupFailed || !completeQuota.allowed) {
-        await cleanupR2Keys(objectKeys)
-        await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
-        return json(
-          { error: completeQuota.lookupFailed ? r2QuotaLookupError : r2QuotaExceededError },
-          completeQuota.lookupFailed ? 503 : 507,
-          origin,
-          allowedOrigins,
-        )
-      }
+      const maxR2Bytes = parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES'))
+      const assets = submittedFiles.map((file, idx) => ({
+        kind: file.role === 'gif' ? 'gif' : 'image',
+        storage_path: file.storagePath,
+        mime_type: file.mimeType,
+        file_name: file.name,
+        sort_order: file.index,
+        byte_size: verifiedSizes[idx],
+      }))
 
-      try {
-        const assets = submittedFiles.map((file, idx) => ({
-          album_id: album.id,
-          kind: file.role === 'gif' ? 'gif' : 'image',
-          storage_path: file.storagePath,
-          mime_type: file.mimeType,
-          file_name: file.name,
-          sort_order: file.index,
-          byte_size: verifiedSizes[idx],
-        }))
+      // Single atomic RPC: re-check 9.5 GB hard cap + insert assets + publish album.
+      const finalizeStart = performance.now()
+      const finalizeResult = await postgrestRpc<string>(dbConfig, 'finalize_album_publish', {
+        p_album_id: album.id,
+        p_assets: assets,
+        p_incoming_bytes: totalActualBytes,
+        p_max_r2_bytes: maxR2Bytes,
+      })
+      const finalizeDuration = performance.now() - finalizeStart
 
-        const { error: assetError } = await admin.from('photobooth_album_assets').insert(assets)
-        if (assetError) {
-          if (assetError.code === '23505') {
-            return json({ error: 'Album đang được hoàn tất.' }, 409, origin, allowedOrigins)
-          }
-          throw assetError
-        }
-
-        const { data: published, error: publishError } = await admin
-          .from('photobooth_albums')
-          .update({ status: 'published', updated_at: new Date().toISOString() })
-          .eq('id', album.id)
-          .eq('status', 'draft')
-          .select('id')
-          .maybeSingle()
-        if (publishError || !published) throw publishError ?? new Error('Draft already finalized.')
-      } catch {
-        console.error('Album finalize failed')
-        const { data: deletedDraft } = await admin
-          .from('photobooth_albums')
-          .delete()
-          .eq('id', album.id)
-          .eq('status', 'draft')
-          .select('id')
-          .maybeSingle()
-        if (deletedDraft) {
-          await cleanupR2Keys(objectKeys)
-        }
+      if (finalizeResult.error) {
+        console.error('finalize_album_publish RPC failed during complete')
+        const deleted = await deleteDraftAlbum(dbConfig, album.id)
+        if (deleted) await cleanupR2Keys(objectKeys)
         return json({ error: 'Không thể xuất bản album. Hãy thử lại.' }, 500, origin, allowedOrigins)
       }
 
-      return json({
-        shareCode: album.share_code,
-        url: buildAlbumShareUrl(galleryBaseUrl, album.share_code),
-      }, 201, origin, allowedOrigins)
+      if (finalizeResult.data === 'quota_exceeded') {
+        const deleted = await deleteDraftAlbum(dbConfig, album.id)
+        if (deleted) await cleanupR2Keys(objectKeys)
+        return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
+      }
+      if (finalizeResult.data === 'conflict') {
+        return json({ error: 'Album đang được hoàn tất.' }, 409, origin, allowedOrigins)
+      }
+      if (finalizeResult.data !== 'ok') {
+        return json({ error: 'Phiên tải album không hợp lệ hoặc đã hết hạn.' }, 403, origin, allowedOrigins)
+      }
+
+      const totalDuration = performance.now() - startedAt
+      return json(
+        {
+          shareCode: album.share_code,
+          url: buildAlbumShareUrl(galleryBaseUrl, album.share_code),
+        },
+        201,
+        origin,
+        allowedOrigins,
+        {
+          'Server-Timing': `db-lookup;dur=${lookupDuration.toFixed(1)}, r2-head;dur=${headDuration.toFixed(1)}, db-finalize;dur=${finalizeDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+        },
+      )
     }
 
     if (action === 'abort') {
@@ -629,16 +631,17 @@ Deno.serve(async (request: Request) => {
         return json({ error: 'Phiên hủy tải album không hợp lệ.' }, 400, origin, allowedOrigins)
       }
 
-      const { data: album, error: lookupError } = await admin
-        .from('photobooth_albums')
-        .select('id, share_code, status')
-        .eq('id', albumId)
-        .maybeSingle()
+      const albumResult = await postgrestSelect<DraftAlbumRow[]>(
+        dbConfig,
+        'photobooth_albums',
+        `select=id,share_code,status&id=eq.${encodeURIComponent(albumId)}&limit=1`,
+      )
 
-      if (lookupError) {
+      if (albumResult.error) {
         console.error('Album lookup failed during abort')
         return json({ error: 'Không thể hủy phiên tải album.' }, 500, origin, allowedOrigins)
       }
+      const album = albumResult.data?.[0]
       if (!album || album.status !== 'draft') {
         return json({ error: 'Phiên hủy tải album không hợp lệ.' }, 403, origin, allowedOrigins)
       }
@@ -653,14 +656,7 @@ Deno.serve(async (request: Request) => {
         return json({ error: 'Phiên hủy tải album không hợp lệ.' }, 403, origin, allowedOrigins)
       }
 
-      const { data: deletedDraft } = await admin
-        .from('photobooth_albums')
-        .delete()
-        .eq('id', album.id)
-        .eq('status', 'draft')
-        .select('id')
-        .maybeSingle()
-
+      const deletedDraft = await deleteDraftAlbum(dbConfig, album.id)
       if (deletedDraft && isR2Configured() && Array.isArray(payload.storagePaths)) {
         const safeKeys = Array.from(new Set(
           payload.storagePaths
@@ -671,7 +667,7 @@ Deno.serve(async (request: Request) => {
         await cleanupR2Keys(safeKeys)
       }
 
-      return json({ aborted: Boolean(deletedDraft) }, 200, origin, allowedOrigins)
+      return json({ aborted: deletedDraft }, 200, origin, allowedOrigins)
     }
 
     return json({ error: 'Hành động không được hỗ trợ.' }, 400, origin, allowedOrigins)
@@ -687,21 +683,25 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Bộ ảnh vượt quá giới hạn 60 MB.' }, 413, origin, allowedOrigins)
   }
 
-  const clientHash = await hashClient(request, serviceRoleKey)
-  const rate = await checkRateLimit(admin, clientHash)
-  if (rate.lookupFailed) {
-    return json({ error: 'Không thể bắt đầu tải album.' }, 500, origin, allowedOrigins)
-  }
-  if (!rate.allowed) {
-    return json({ error: 'Thiết bị đã tạo quá nhiều album. Hãy thử lại sau một giờ.' }, 429, origin, allowedOrigins)
+  const useR2 = isR2Configured()
+  const maxR2Bytes = useR2 ? parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES')) : null
+  if (useR2 && maxR2Bytes !== null && maxR2Bytes <= 0) {
+    return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
   }
 
+  // Start reading multipart body immediately alongside client IP hashing (no DB stall before reading body).
+  const parseStart = performance.now()
   let form: FormData
+  let clientHash: string
   try {
-    form = await request.formData()
+    ;[form, clientHash] = await Promise.all([
+      request.formData(),
+      hashClient(request, serviceRoleKey),
+    ])
   } catch {
     return json({ error: 'Dữ liệu tải lên không hợp lệ.' }, 400, origin, allowedOrigins)
   }
+  const parseDuration = performance.now() - parseStart
 
   const layoutId = String(form.get('layoutId') || '')
   const allowedPhotoCounts = expectedPhotoCounts[layoutId]
@@ -729,32 +729,42 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Bộ ảnh vượt quá giới hạn 60 MB.' }, 413, origin, allowedOrigins)
   }
 
-  const useR2 = isR2Configured()
-  if (useR2) {
-    const storageQuota = await checkR2StorageQuota(admin, totalBytes)
-    if (storageQuota.lookupFailed) {
-      return json({ error: r2QuotaLookupError }, 503, origin, allowedOrigins)
-    }
-    if (!storageQuota.allowed) {
-      return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
-    }
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+  // Single atomic RPC: rate limit + R2 storage hard cap + create draft + log event (1 round-trip instead of 4).
+  const dbInitStart = performance.now()
+  const beginResult = await postgrestRpc<BeginUploadRow[]>(dbConfig, 'begin_album_upload', {
+    p_client_hash: clientHash,
+    p_upload_limit: uploadLimitPerHour,
+    p_title: title || 'Khoảnh khắc của bạn',
+    p_message: message || null,
+    p_expires_at: expiresAt,
+    p_incoming_bytes: totalBytes,
+    p_max_r2_bytes: maxR2Bytes,
+  })
+  const dbInitDuration = performance.now() - dbInitStart
+
+  if (beginResult.error) {
+    console.error('begin_album_upload RPC failed during multipart')
+    return json({ error: useR2 ? r2QuotaLookupError : 'Không thể bắt đầu tải album.' }, useR2 ? 503 : 500, origin, allowedOrigins)
   }
 
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: album, error: albumError } = await admin
-    .from('photobooth_albums')
-    .insert({
-      title: title || 'Khoảnh khắc của bạn',
-      message: message || null,
-      status: 'draft',
-      expires_at: expiresAt,
-    })
-    .select('id, share_code')
-    .single()
-  if (albumError || !album) {
-    console.error('Album creation failed')
+  const beginRow = beginResult.data?.[0]
+  if (!beginRow) {
     return json({ error: 'Không thể tạo album.' }, 500, origin, allowedOrigins)
   }
+  if (beginRow.status === 'rate_limited') {
+    return json({ error: 'Thiết bị đã tạo quá nhiều album. Hãy thử lại sau một giờ.' }, 429, origin, allowedOrigins)
+  }
+  if (beginRow.status === 'quota_exceeded') {
+    return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
+  }
+  if (beginRow.status !== 'ok' || !beginRow.album_id || !beginRow.share_code) {
+    return json({ error: 'Không thể tạo album.' }, 500, origin, allowedOrigins)
+  }
+
+  const albumId = beginRow.album_id
+  const shareCode = beginRow.share_code
 
   const files: Array<{ file: File; kind: 'image' | 'gif'; name: string }> = [
     { file: strip, kind: 'image', name: `photobooth.${extensionForMime(strip.type)}` },
@@ -769,10 +779,20 @@ Deno.serve(async (request: Request) => {
   const uploadedR2Keys: string[] = []
   const uploadedSupabasePaths: string[] = []
 
+  const uploadStart = performance.now()
+  let assets: Array<{
+    kind: 'image' | 'gif'
+    storage_path: string
+    mime_type: string
+    file_name: string
+    sort_order: number
+    byte_size: number
+  }>
+
   try {
-    const assets = await runWithConcurrency(files, uploadConcurrency, async (item, index) => {
+    assets = await runWithConcurrency(files, r2ParallelConcurrency, async (item, index) => {
       const mimeType = normalizeMimeType(item.file.type)
-      const objectKey = `${album.id}/${crypto.randomUUID()}.${extensionForMime(mimeType)}`
+      const objectKey = `${albumId}/${crypto.randomUUID()}.${extensionForMime(mimeType)}`
       let storagePath: string
 
       if (useR2) {
@@ -780,23 +800,18 @@ Deno.serve(async (request: Request) => {
           key: objectKey,
           body: item.file,
           contentType: mimeType,
-          cacheControl: 'public, max-age=3600',
+          cacheControl: 'private, max-age=3600, immutable',
         })
         uploadedR2Keys.push(objectKey)
         storagePath = `${R2_STORAGE_PREFIX}${objectKey}`
       } else {
-        const { error: uploadError } = await admin.storage.from(bucket).upload(objectKey, item.file, {
-          contentType: mimeType,
-          cacheControl: '3600',
-          upsert: false,
-        })
-        if (uploadError) throw uploadError
+        const uploaded = await uploadStorageObject(dbConfig, bucket, objectKey, item.file, mimeType, '3600')
+        if (uploaded.error) throw new Error(uploaded.error.message)
         uploadedSupabasePaths.push(objectKey)
         storagePath = objectKey
       }
 
       return {
-        album_id: album.id,
         kind: item.kind,
         storage_path: storagePath,
         mime_type: mimeType,
@@ -805,30 +820,51 @@ Deno.serve(async (request: Request) => {
         byte_size: item.file.size,
       }
     })
-
-    const { error: assetError } = await admin.from('photobooth_album_assets').insert(assets)
-    if (assetError) throw assetError
-
-    const { error: publishError } = await admin
-      .from('photobooth_albums')
-      .update({ status: 'published', updated_at: new Date().toISOString() })
-      .eq('id', album.id)
-      .eq('status', 'draft')
-    if (publishError) throw publishError
-
-    await admin.from('photobooth_album_upload_events').insert({ client_hash: clientHash, album_id: album.id })
   } catch {
     console.error('Multipart album upload failed')
     await Promise.allSettled([
       cleanupR2Keys(uploadedR2Keys),
-      uploadedSupabasePaths.length ? admin.storage.from(bucket).remove(uploadedSupabasePaths) : Promise.resolve(),
+      removeStorageObjects(dbConfig, bucket, uploadedSupabasePaths),
+      deleteDraftAlbum(dbConfig, albumId),
     ])
-    await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
+    return json({ error: 'Tải album thất bại. Hãy thử lại.' }, 500, origin, allowedOrigins)
+  }
+  const uploadDuration = performance.now() - uploadStart
+
+  // Single atomic RPC: re-check R2 cap (if R2) + insert assets + publish album.
+  const dbFinalizeStart = performance.now()
+  const finalizeResult = await postgrestRpc<string>(dbConfig, 'finalize_album_publish', {
+    p_album_id: albumId,
+    p_assets: assets,
+    p_incoming_bytes: totalBytes,
+    p_max_r2_bytes: maxR2Bytes,
+  })
+  const dbFinalizeDuration = performance.now() - dbFinalizeStart
+
+  if (finalizeResult.error || finalizeResult.data !== 'ok') {
+    console.error('Multipart album finalize failed')
+    await Promise.allSettled([
+      cleanupR2Keys(uploadedR2Keys),
+      removeStorageObjects(dbConfig, bucket, uploadedSupabasePaths),
+      deleteDraftAlbum(dbConfig, albumId),
+    ])
+    if (finalizeResult.data === 'quota_exceeded') {
+      return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
+    }
     return json({ error: 'Tải album thất bại. Hãy thử lại.' }, 500, origin, allowedOrigins)
   }
 
-  return json({
-    shareCode: album.share_code,
-    url: buildAlbumShareUrl(galleryBaseUrl, album.share_code),
-  }, 201, origin, allowedOrigins)
+  const totalDuration = performance.now() - startedAt
+  return json(
+    {
+      shareCode,
+      url: buildAlbumShareUrl(galleryBaseUrl, shareCode),
+    },
+    201,
+    origin,
+    allowedOrigins,
+    {
+      'Server-Timing': `parse;dur=${parseDuration.toFixed(1)}, db-init;dur=${dbInitDuration.toFixed(1)}, upload;dur=${uploadDuration.toFixed(1)}, db-finalize;dur=${dbFinalizeDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+    },
+  )
 })

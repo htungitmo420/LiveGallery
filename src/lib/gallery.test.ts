@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAlbumPath,
+  clearAlbumManifestCache,
   detectMobilePlatform,
+  fetchAlbum,
   getShareCodeFromPath,
   isMobileDevice,
   isSafeMediaUrl,
@@ -10,6 +12,12 @@ import {
   parseManifest,
   saveMediaFileToDevice,
 } from './gallery'
+
+afterEach(() => {
+  clearAlbumManifestCache()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 describe('share code routing', () => {
   it('normalizes valid codes', () => {
@@ -204,5 +212,50 @@ describe('mobile photo export helpers', () => {
     expect(outcome.canRetryShare).toBe(true)
     expect(outcome.previewUrl).toMatch(/^data:image\/jpeg;base64,/)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('manifest caching and in-flight deduplication', () => {
+  it('deduplicates concurrent fetchAlbum calls and serves subsequent reads from cache until bypassed', async () => {
+    const manifestPayload = {
+      album: {
+        shareCode: 'fast999',
+        title: 'Tối ưu tốc độ',
+        message: null,
+        createdAt: '2026-11-26T12:00:00.000Z',
+        expiresAt: null,
+      },
+      items: [
+        {
+          id: 'img-1',
+          kind: 'image',
+          url: 'https://example.r2.cloudflarestorage.com/live-gallery/a/b.jpg',
+          thumbnailUrl: null,
+          mimeType: 'image/jpeg',
+          fileName: 'photobooth.jpg',
+          sortOrder: 0,
+        },
+      ],
+      decor: { stickers: [], backgrounds: [] },
+    }
+
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify(manifestPayload), { status: 200 })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [a, b] = await Promise.all([fetchAlbum('fast999'), fetchAlbum('FAST999')])
+    expect(a.shareCode).toBe('fast999')
+    expect(b.shareCode).toBe('fast999')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // Subsequent call hits in-memory cache (0 additional network requests)
+    const c = await fetchAlbum('fast999')
+    expect(c.title).toBe('Tối ưu tốc độ')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // Explicit refresh bypasses cache
+    await fetchAlbum('fast999', undefined, { bypassCache: true })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

@@ -1095,6 +1095,26 @@
   object-fit: cover;
   width: 100%;
 }
+.thumbnail__placeholder {
+  background: linear-gradient(120deg, var(--surface) 25%, var(--surface-2, var(--line)) 50%, var(--surface) 75%);
+  display: block;
+  height: 100%;
+  opacity: 0.45;
+  width: 100%;
+}
+.thumbnail__gif {
+  align-items: center;
+  background: var(--surface);
+  color: var(--ink-muted);
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  height: 100%;
+  justify-content: center;
+  letter-spacing: 0.14em;
+  width: 100%;
+}
 .thumbnail__num {
   background: rgba(9, 8, 7, 0.82);
   color: #f3efe6;
