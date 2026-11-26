@@ -24,7 +24,7 @@ import {
 } from './decor'
 import { SavePhotoModal, type ManualSaveState } from './SavePhotoModal'
 import { deleteLocalBackground, loadLocalBackgrounds, saveLocalBackground, type LocalBackground } from './lib/localBackgrounds'
-import type { GalleryAlbum } from './lib/gallery'
+import { isSafeMediaUrl, type GalleryAlbum } from './lib/gallery'
 
 const COLORS = ['#5a3822', '#171717', '#f4e7d3', '#d98282', '#6c7c63', '#596b8d', '#f7f2ea']
 const MAX_ITEMS = 6
@@ -38,16 +38,119 @@ function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function sanitizeStoredStickers(raw: unknown): PlacedSticker[] {
+  if (!Array.isArray(raw)) return []
+  const valid: PlacedSticker[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const id = typeof item.id === 'string' ? item.id : ''
+    const placementId = typeof item.placementId === 'string' ? item.placementId : ''
+    const name = typeof item.name === 'string' ? item.name : ''
+    const kind = item.kind
+    const content = typeof item.content === 'string' ? item.content.trim() : ''
+    if (!id || !placementId || !name || !content) continue
+    if (kind !== 'emoji' && kind !== 'image') continue
+    if (kind === 'image' && !isSafeMediaUrl(content)) continue
+    if (
+      typeof item.x !== 'number' || !Number.isFinite(item.x)
+      || typeof item.y !== 'number' || !Number.isFinite(item.y)
+      || typeof item.size !== 'number' || !Number.isFinite(item.size)
+      || typeof item.rotation !== 'number' || !Number.isFinite(item.rotation)
+      || typeof item.zIndex !== 'number' || !Number.isFinite(item.zIndex)
+    ) {
+      continue
+    }
+    valid.push({
+      id,
+      placementId,
+      name,
+      category: typeof item.category === 'string' ? item.category : undefined,
+      kind,
+      content,
+      x: item.x,
+      y: item.y,
+      size: clampStickerSize(item.size),
+      rotation: normalizeStickerRotation(item.rotation),
+      flipX: Boolean(item.flipX),
+      zIndex: Math.trunc(item.zIndex),
+    })
+    if (valid.length >= 20) break
+  }
+  return valid
+}
+
+function sanitizeStoredCollage(raw: unknown): CollageSettings {
+  if (!raw || typeof raw !== 'object') return DEFAULT_COLLAGE
+  const record = raw as Record<string, unknown>
+  const rawItems = Array.isArray(record.items) ? record.items : []
+  const items: CollageItem[] = []
+  for (const entry of rawItems) {
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    if (
+      typeof item.id !== 'string' || !item.id
+      || typeof item.x !== 'number' || !Number.isFinite(item.x)
+      || typeof item.y !== 'number' || !Number.isFinite(item.y)
+      || typeof item.width !== 'number' || !Number.isFinite(item.width)
+      || typeof item.rotation !== 'number' || !Number.isFinite(item.rotation)
+      || typeof item.zIndex !== 'number' || !Number.isFinite(item.zIndex)
+    ) {
+      continue
+    }
+    items.push({
+      id: item.id,
+      x: Math.min(1.12, Math.max(-0.12, item.x)),
+      y: Math.min(1.12, Math.max(-0.12, item.y)),
+      width: Math.min(0.95, Math.max(0.12, item.width)),
+      rotation: normalizeStickerRotation(item.rotation),
+      zIndex: Math.trunc(item.zIndex),
+    })
+    if (items.length >= MAX_ITEMS) break
+  }
+
+  const format = record.format === 'landscape' || record.format === 'square' || record.format === 'portrait' || record.format === 'story'
+    ? record.format
+    : DEFAULT_COLLAGE.format
+  const pattern = record.pattern === 'solid' || record.pattern === 'dots' || record.pattern === 'grid'
+    ? record.pattern
+    : DEFAULT_COLLAGE.pattern
+  const messagePosition = record.messagePosition === 'top' || record.messagePosition === 'bottom'
+    ? record.messagePosition
+    : DEFAULT_COLLAGE.messagePosition
+  const background = typeof record.background === 'string' && /^#[0-9a-f]{3,8}$/i.test(record.background.trim())
+    ? record.background.trim()
+    : DEFAULT_COLLAGE.background
+  const messageColor = typeof record.messageColor === 'string' && /^#[0-9a-f]{3,8}$/i.test(record.messageColor.trim())
+    ? record.messageColor.trim()
+    : DEFAULT_COLLAGE.messageColor
+  const message = typeof record.message === 'string' ? record.message.slice(0, 80) : DEFAULT_COLLAGE.message
+  const backgroundImageUrl = typeof record.backgroundImageUrl === 'string'
+    && isSafeMediaUrl(record.backgroundImageUrl)
+    && !record.backgroundImageUrl.trim().toLowerCase().startsWith('blob:')
+    ? record.backgroundImageUrl.trim()
+    : undefined
+
+  return {
+    format,
+    background,
+    backgroundImageUrl,
+    pattern,
+    message,
+    messageColor,
+    messagePosition,
+    items: items.length > 0 ? items : DEFAULT_COLLAGE.items,
+  }
+}
+
 function readStoredDecor(code: string): StoredDecor {
   try {
     const raw = localStorage.getItem(`livegallery-decor:${code}`)
     if (!raw) return { stickers: [], collage: DEFAULT_COLLAGE }
     const parsed = JSON.parse(raw) as Partial<StoredDecor>
     return {
-      stickers: Array.isArray(parsed.stickers) ? parsed.stickers : [],
-      collage: parsed.collage && Array.isArray(parsed.collage.items)
-        ? { ...DEFAULT_COLLAGE, ...parsed.collage }
-        : DEFAULT_COLLAGE,
+      stickers: sanitizeStoredStickers(parsed.stickers),
+      collage: sanitizeStoredCollage(parsed.collage),
     }
   } catch {
     return { stickers: [], collage: DEFAULT_COLLAGE }
@@ -57,7 +160,7 @@ function readStoredDecor(code: string): StoredDecor {
 function StripArtwork({ source, stickers }: { source: string; stickers: PlacedSticker[] }) {
   return (
     <div className="decor-strip-artwork">
-      <img alt="" draggable={false} src={source} />
+      <img alt="" crossOrigin="anonymous" draggable={false} src={source} />
       {stickers.slice().sort((a, b) => a.zIndex - b.zIndex).map((sticker) => (
         <span
           className="decor-sticker-render"
@@ -70,7 +173,7 @@ function StripArtwork({ source, stickers }: { source: string; stickers: PlacedSt
             zIndex: sticker.zIndex,
           }}
         >
-          {sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : <span>{sticker.content}</span>}
+          {sticker.kind === 'image' ? <img alt="" crossOrigin="anonymous" draggable={false} src={sticker.content} /> : <span>{sticker.content}</span>}
         </span>
       ))}
     </div>
@@ -485,7 +588,10 @@ export function DecorStudio({ album, onClose }: Props) {
     : collage.pattern === 'grid'
       ? ['linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px)', 'linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px)']
       : []
-  const backgroundLayers = [...patternLayers, ...(collage.backgroundImageUrl ? [`url(${JSON.stringify(collage.backgroundImageUrl)})`] : [])]
+  const safeBackgroundImageUrl = collage.backgroundImageUrl && isSafeMediaUrl(collage.backgroundImageUrl)
+    ? collage.backgroundImageUrl
+    : undefined
+  const backgroundLayers = [...patternLayers, ...(safeBackgroundImageUrl ? [`url(${JSON.stringify(safeBackgroundImageUrl)})`] : [])]
 
   return (
     <section className="decor-studio">
@@ -544,6 +650,7 @@ export function DecorStudio({ album, onClose }: Props) {
             >
               <img
                 alt="Ảnh photobooth"
+                crossOrigin="anonymous"
                 draggable={false}
                 onLoad={(event) => setBaseAspect(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)}
                 src={base.url}
@@ -569,7 +676,7 @@ export function DecorStudio({ album, onClose }: Props) {
                       style={{ transform: `rotate(${sticker.rotation}deg)${sticker.flipX ? ' scaleX(-1)' : ''}` }}
                       type="button"
                     >
-                      {sticker.kind === 'image' ? <img alt="" draggable={false} src={sticker.content} /> : sticker.content}
+                      {sticker.kind === 'image' ? <img alt="" crossOrigin="anonymous" draggable={false} src={sticker.content} /> : sticker.content}
                     </button>
                   </div>
                 )
@@ -640,8 +747,8 @@ export function DecorStudio({ album, onClose }: Props) {
                 ['--stage-aspect' as string]: output.width / output.height,
                 backgroundColor: collage.background,
                 backgroundImage: backgroundLayers.length ? backgroundLayers.join(',') : undefined,
-                backgroundSize: `${patternLayers.map(() => '24px 24px').join(',')}${patternLayers.length && collage.backgroundImageUrl ? ',' : ''}${collage.backgroundImageUrl ? 'cover' : ''}` || undefined,
-                backgroundPosition: collage.backgroundImageUrl ? '0 0,0 0,center' : undefined,
+                backgroundSize: `${patternLayers.map(() => '24px 24px').join(',')}${patternLayers.length && safeBackgroundImageUrl ? ',' : ''}${safeBackgroundImageUrl ? 'cover' : ''}` || undefined,
+                backgroundPosition: safeBackgroundImageUrl ? '0 0,0 0,center' : undefined,
               }}
             >
               {collage.items.slice().sort((a, b) => a.zIndex - b.zIndex).map((item) => (
@@ -766,7 +873,7 @@ export function DecorStudio({ album, onClose }: Props) {
                     title={asset.name}
                     type="button"
                   >
-                    {asset.kind === 'image' ? <img alt={asset.name} src={asset.content} /> : <span>{asset.content}</span>}
+                    {asset.kind === 'image' ? <img alt={asset.name} crossOrigin="anonymous" src={asset.content} /> : <span>{asset.content}</span>}
                   </button>
                 ))}
               </div>
@@ -906,7 +1013,7 @@ export function DecorStudio({ album, onClose }: Props) {
                     onClick={() => setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))}
                     type="button"
                   >
-                    <img alt="" src={item.url} />
+                    <img alt="" crossOrigin="anonymous" src={item.url} />
                     {item.name}
                   </button>
                 ))}

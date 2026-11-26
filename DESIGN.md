@@ -44,7 +44,7 @@ Shared studio visual system for **Khoảnh Khắc Photobooth** and **Khoảnh Kh
 ## Typography
 
 - **Display / Editorial Headlines:** `Fraunces` (optical serif that brings editorial print warmth and high contrast at display sizes)
-- **UI / Body / Vietnamese Diacritics:** `Be Vietnam Pro` (engineered for crisp Vietnamese diacritics on desktop and small mobile screens)
+- **UI / Body / Vietnamese Diacritics:** `Be Vietnam Pro` (designed for clear Vietnamese diacritics on desktop and small mobile screens)
 - **Telemetry / Codes:** `IBM Plex Mono` (used strictly for real 35mm frame numbers `01 / 08`, share codes `#D44092`, and actual canvas dimensions `1440 × 2560`, never for decorative fake terminals)
 
 ## Geometry, Elevation & Motion
@@ -60,7 +60,7 @@ Shared studio visual system for **Khoảnh Khắc Photobooth** and **Khoảnh Kh
 
 ## Decision Log (R-31)
 
-- **Why matte darkroom default with Kodak gold accent?** Evaluating photographs and white photobooth strips against `#11100f` and `#090807` eliminates ambient glare and makes physical prints pop immediately, while the working Archival Light toggle gives daytime users an equally legible paper alternative.
-- **Why asymmetric split with claim-stub form and vertical 35mm contact sheet on landing?** Guests arrive with a physical booth code; pairing a ticket-notched lookup form on the left with a vertical 35mm filmstrip and angled archival print on the right gives immediate functional focus and unmistakable photography identity.
+- **Why matte darkroom default with Kodak gold accent?** Evaluating photographs and white photobooth strips against `#11100f` and `#090807` reduces ambient glare and keeps white-bordered prints clear against the background, while the working Archival Light toggle gives daytime users an equally legible paper alternative.
+- **Why asymmetric split with claim-stub form and vertical 35mm contact sheet on landing?** Guests arrive with a physical booth code; pairing a ticket-notched lookup form on the left with a vertical 35mm filmstrip and angled archival print on the right gives immediate functional focus and a clear photography identity.
 - **Why 56px top bar + edge-to-edge lightbox + numbered filmstrip rail in AlbumViewer?** Photos are the product; minimizing chrome maximizes photo area while keeping "Trang trí" (always labeled on mobile), "Chia sẻ", "Tải ảnh", and theme switching within one thumb tap.
 - **Why `#0c0b0a` light-table in DecorStudio?** Placing the white photobooth strip on a darkroom table creates unambiguous boundary contrast while placing stickers and adjusting collage layouts.

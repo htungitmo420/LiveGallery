@@ -481,6 +481,7 @@ function MediaView({
     <img
       alt={`${albumTitle} - ${item.fileName}`}
       className="viewer__media"
+      crossOrigin="anonymous"
       draggable={false}
       fetchPriority="high"
       height={item.height ?? undefined}
@@ -788,6 +789,7 @@ function AlbumViewer({
                   >
                     <img
                       alt=""
+                      crossOrigin="anonymous"
                       height={56}
                       loading="lazy"
                       src={item.thumbnailUrl ?? item.url}

@@ -1,10 +1,18 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import {
+  createR2PresignedGetUrl,
+  isR2Configured,
+  isR2StoragePath,
+  isSafeAlbumR2Path,
+  stripR2Prefix,
+} from '../_shared/r2.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'X-Content-Type-Options': 'nosniff',
 }
 
 const codePattern = /^[a-z0-9_-]{6,64}$/i
@@ -54,7 +62,7 @@ Deno.serve(async (request: Request) => {
     .maybeSingle()
 
   if (albumError) {
-    console.error('Album lookup failed', albumError)
+    console.error('Album lookup failed')
     return json({ error: 'Không thể tải album lúc này.' }, 500)
   }
 
@@ -70,7 +78,7 @@ Deno.serve(async (request: Request) => {
     .order('sort_order', { ascending: true })
 
   if (assetsError) {
-    console.error('Asset lookup failed', assetsError)
+    console.error('Asset lookup failed')
     return json({ error: 'Không thể tải ảnh trong album.' }, 500)
   }
 
@@ -87,8 +95,8 @@ Deno.serve(async (request: Request) => {
       .order('sort_order')
       .order('name'),
   ])
-  if (stickerError) console.error('Sticker catalog lookup failed', stickerError)
-  if (backgroundError) console.error('Background catalog lookup failed', backgroundError)
+  if (stickerError) console.error('Sticker catalog lookup failed')
+  if (backgroundError) console.error('Background catalog lookup failed')
 
   const paths = Array.from(new Set(
     (assets ?? []).flatMap((asset) =>
@@ -98,15 +106,32 @@ Deno.serve(async (request: Request) => {
 
   const signedUrlByPath = new Map<string, string>()
   if (paths.length > 0) {
+    const r2Ready = isR2Configured()
     const signedFiles = await Promise.all(paths.map(async (path) => {
+      if (isR2StoragePath(path)) {
+        if (!r2Ready || !isSafeAlbumR2Path(path, album.id)) {
+          return { path, signedUrl: undefined, failed: true }
+        }
+        try {
+          const signedUrl = await createR2PresignedGetUrl({
+            key: stripR2Prefix(path),
+            expiresInSeconds: signedUrlTtlSeconds,
+          })
+          return { path, signedUrl, failed: false }
+        } catch {
+          return { path, signedUrl: undefined, failed: true }
+        }
+      }
+
       const { data, error } = await admin.storage
         .from('photobooth-albums')
         .createSignedUrl(path, signedUrlTtlSeconds)
-      return { path, signedUrl: data?.signedUrl, error }
+      return { path, signedUrl: data?.signedUrl, failed: Boolean(error || !data?.signedUrl) }
     }))
-    const signedError = signedFiles.find((file) => file.error || !file.signedUrl)
-    if (signedError) {
-      console.error('Signed URL creation failed', signedError.error)
+
+    const signedFailure = signedFiles.find((file) => file.failed || !file.signedUrl)
+    if (signedFailure) {
+      console.error('Signed URL creation failed')
       return json({ error: 'Không thể mở tệp trong album.' }, 500)
     }
     for (const file of signedFiles) {

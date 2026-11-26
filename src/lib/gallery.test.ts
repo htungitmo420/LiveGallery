@@ -4,6 +4,7 @@ import {
   detectMobilePlatform,
   getShareCodeFromPath,
   isMobileDevice,
+  isSafeMediaUrl,
   normalizeMediaFileName,
   normalizeShareCode,
   parseManifest,
@@ -89,6 +90,65 @@ describe('manifest parsing', () => {
     expect(() => parseManifest({ album: {}, items: [] })).toThrow(
       'Dữ liệu album chưa đầy đủ.',
     )
+  })
+
+  it('validates media URLs and blocks unsafe schemes in manifest items and decor', () => {
+    expect(isSafeMediaUrl('https://abc.r2.cloudflarestorage.com/bucket/photo.jpg')).toBe(true)
+    expect(isSafeMediaUrl('http://localhost:4173/mock.png')).toBe(true)
+    expect(isSafeMediaUrl('http://127.0.0.1:54321/mock.jpg')).toBe(true)
+    expect(isSafeMediaUrl('blob:https://livegallery.vercel.app/1234-5678')).toBe(true)
+    expect(isSafeMediaUrl('data:image/png;base64,iVBORw0KGgo=')).toBe(true)
+    expect(isSafeMediaUrl('data:image/jpeg;base64,/9j/4AAQ')).toBe(true)
+    expect(isSafeMediaUrl('data:image/webp;base64,UklGRg==')).toBe(true)
+    expect(isSafeMediaUrl('data:image/gif;base64,R0lGODlh')).toBe(true)
+
+    expect(isSafeMediaUrl('javascript:alert(1)')).toBe(false)
+    expect(isSafeMediaUrl('data:text/html,<script>alert(1)</script>')).toBe(false)
+    expect(isSafeMediaUrl('data:image/svg+xml,<svg onload=alert(1)>')).toBe(false)
+    expect(isSafeMediaUrl('http://insecure.example.com/photo.jpg')).toBe(false)
+    expect(isSafeMediaUrl('https://user:pass@example.com/photo.jpg')).toBe(false)
+    expect(isSafeMediaUrl('file:///etc/passwd')).toBe(false)
+
+    expect(() => parseManifest({
+      album: { shareCode: 'safe01', title: 'Test', createdAt: '2026-10-20T12:00:00.000Z' },
+      items: [{ id: '1', kind: 'image', url: 'javascript:alert(1)', fileName: 'x.jpg' }],
+    })).toThrow('Dữ liệu ảnh không hợp lệ.')
+
+    expect(() => parseManifest({
+      album: { shareCode: 'safe02', title: 'Test', createdAt: '2026-10-20T12:00:00.000Z' },
+      items: [{ id: '1', kind: 'image', url: 'data:image/svg+xml,<svg/>', fileName: 'x.svg' }],
+    })).toThrow('Dữ liệu ảnh không hợp lệ.')
+
+    const album = parseManifest({
+      album: { shareCode: 'safe03', title: 'Safe Album', createdAt: '2026-10-20T12:00:00.000Z' },
+      items: [
+        {
+          id: 'img-1',
+          kind: 'image',
+          url: 'https://example.r2.cloudflarestorage.com/b/1.jpg',
+          thumbnailUrl: 'javascript:alert(1)',
+          mimeType: 'image/jpeg',
+          fileName: 'photobooth.jpg',
+          sortOrder: 0,
+        },
+      ],
+      decor: {
+        stickers: [
+          { id: 'ok', name: 'Tim', category: 'cute', url: 'https://proj.supabase.co/storage/v1/s.png' },
+          { id: 'xss', name: 'Bad', category: 'cute', url: 'data:image/svg+xml,<svg/>' },
+          { id: 'http', name: 'Insecure', category: 'cute', url: 'http://evil.example.com/s.png' },
+        ],
+        backgrounds: [
+          { id: 'ok-bg', name: 'Paper', url: 'https://proj.supabase.co/storage/v1/bg.jpg' },
+          { id: 'bad-bg', name: 'XSS', url: 'javascript:alert(1)' },
+        ],
+      },
+    })
+    expect(album.items[0].thumbnailUrl).toBeNull()
+    expect(album.stickers).toHaveLength(1)
+    expect(album.stickers[0].id).toBe('ok')
+    expect(album.backgrounds).toHaveLength(1)
+    expect(album.backgrounds[0].id).toBe('ok-bg')
   })
 })
 

@@ -45,6 +45,61 @@ interface ManifestResponse {
 }
 
 const CODE_PATTERN = /^[a-z0-9_-]{6,64}$/i
+const SAFE_RASTER_DATA_URL_PATTERN = /^data:image\/(?:png|jpeg|webp|gif)(?:;[a-z0-9=._+-]+)*,/i
+
+function hasControlChar(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+export function isSafeMediaUrl(raw: unknown): raw is string {
+  if (typeof raw !== 'string') return false
+  const trimmed = raw.trim()
+  if (!trimmed || hasControlChar(trimmed)) return false
+
+  if (/^data:/i.test(trimmed)) {
+    return SAFE_RASTER_DATA_URL_PATTERN.test(trimmed)
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return false
+  }
+
+  if (parsed.username || parsed.password) return false
+
+  if (parsed.protocol === 'https:') {
+    return Boolean(parsed.hostname)
+  }
+
+  if (parsed.protocol === 'http:') {
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+  }
+
+  if (parsed.protocol === 'blob:') {
+    const inner = trimmed.slice(5)
+    if (inner.startsWith('nodedata:') || inner.startsWith('null/')) {
+      return true
+    }
+    try {
+      const innerUrl = new URL(inner)
+      if (innerUrl.username || innerUrl.password) return false
+      if (innerUrl.protocol === 'https:') return Boolean(innerUrl.hostname)
+      if (innerUrl.protocol === 'http:') {
+        return innerUrl.hostname === 'localhost' || innerUrl.hostname === '127.0.0.1'
+      }
+    } catch {
+      return false
+    }
+  }
+
+  return false
+}
 
 export function normalizeShareCode(value: string): string {
   const code = value.trim()
@@ -109,18 +164,21 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
 
     const media = entry as Record<string, unknown>
     const kind = media.kind
-    const url = stringOrEmpty(media.url)
+    const url = stringOrEmpty(media.url).trim()
     const id = stringOrEmpty(media.id)
 
-    if (!id || !url || (kind !== 'image' && kind !== 'gif')) {
+    if (!id || !isSafeMediaUrl(url) || (kind !== 'image' && kind !== 'gif')) {
       throw new Error('Dữ liệu ảnh không hợp lệ.')
     }
+
+    const rawThumb = nullableString(media.thumbnailUrl)?.trim() ?? null
+    const thumbnailUrl = rawThumb && isSafeMediaUrl(rawThumb) ? rawThumb : null
 
     return {
       id,
       kind,
       url,
-      thumbnailUrl: nullableString(media.thumbnailUrl),
+      thumbnailUrl,
       mimeType: stringOrEmpty(media.mimeType),
       fileName: stringOrEmpty(media.fileName) || `khoanh-khac-${index + 1}`,
       width: nullableNumber(media.width),
@@ -141,8 +199,8 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     const sticker = entry as Record<string, unknown>
     const id = stringOrEmpty(sticker.id)
     const name = stringOrEmpty(sticker.name)
-    const url = stringOrEmpty(sticker.url)
-    if (!id || !name || !url) return []
+    const url = stringOrEmpty(sticker.url).trim()
+    if (!id || !name || !isSafeMediaUrl(url)) return []
     return [{ id, name, url, category: stringOrEmpty(sticker.category) || 'cute' }]
   })
   const backgrounds = (Array.isArray(decor.backgrounds) ? decor.backgrounds : []).flatMap((entry) => {
@@ -150,8 +208,8 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
     const background = entry as Record<string, unknown>
     const id = stringOrEmpty(background.id)
     const name = stringOrEmpty(background.name)
-    const url = stringOrEmpty(background.url)
-    return id && name && url ? [{ id, name, url }] : []
+    const url = stringOrEmpty(background.url).trim()
+    return id && name && isSafeMediaUrl(url) ? [{ id, name, url }] : []
   })
 
   return {
