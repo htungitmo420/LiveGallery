@@ -1,6 +1,9 @@
 export const R2_STORAGE_PREFIX = 'r2:'
 export const EMPTY_SHA256_HEX = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 export const DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN = 'https://photobooth-itmo.vercel.app'
+// Hard storage cap set to 9.5 GB (decimal, matching Cloudflare R2 10 GB free-tier billing)
+// to leave a 500 MB safety buffer for in-flight uploads and lifecycle deletion lag.
+export const DEFAULT_R2_MAX_STORAGE_BYTES = 9_500_000_000
 
 const R2_REGION = 'auto'
 const R2_SERVICE = 's3'
@@ -191,6 +194,36 @@ export function readR2Config(envGetter: EnvGetter = defaultEnvGetter): R2Config 
 
 export function isR2Configured(envGetter: EnvGetter = defaultEnvGetter): boolean {
   return readR2Config(envGetter) !== null
+}
+
+export function parseR2MaxStorageBytes(
+  rawValue: string | undefined,
+  fallbackBytes: number = DEFAULT_R2_MAX_STORAGE_BYTES,
+): number {
+  const trimmed = rawValue?.trim() ?? ''
+  if (!trimmed) return fallbackBytes
+  if (!UNSIGNED_INT_PATTERN.test(trimmed)) return fallbackBytes
+  const parsed = Number(trimmed)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return fallbackBytes
+  return parsed
+}
+
+export function hasR2StorageCapacity(
+  usedBytes: number,
+  incomingBytes: number,
+  maxBytes: number = DEFAULT_R2_MAX_STORAGE_BYTES,
+): boolean {
+  if (
+    !Number.isFinite(usedBytes)
+    || !Number.isFinite(incomingBytes)
+    || !Number.isFinite(maxBytes)
+    || usedBytes < 0
+    || incomingBytes < 0
+    || maxBytes <= 0
+  ) {
+    return false
+  }
+  return usedBytes + incomingBytes <= maxBytes
 }
 
 function resolveR2Config(override?: R2Config): R2Config {

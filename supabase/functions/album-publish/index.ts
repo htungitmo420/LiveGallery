@@ -7,12 +7,14 @@ import {
   createUploadToken,
   deleteR2Object,
   hasControlChars,
+  hasR2StorageCapacity,
   headR2Object,
   hmacSha256Hex,
   isAllowedOrigin,
   isR2Configured,
   isSafeAlbumR2Path,
   parseAllowedOrigins,
+  parseR2MaxStorageBytes,
   putR2Object,
   runWithConcurrency,
   stripR2Prefix,
@@ -149,7 +151,7 @@ interface ParsedInitFile {
 function validateInitFiles(
   layoutId: string,
   rawFiles: unknown,
-): { ok: true; files: ParsedInitFile[] } | { ok: false; error: string; status: number } {
+): { ok: true; files: ParsedInitFile[]; totalBytes: number } | { ok: false; error: string; status: number } {
   const allowedPhotoCounts = expectedPhotoCounts[layoutId]
   if (!allowedPhotoCounts) {
     return { ok: false, error: 'Bố cục ảnh không hợp lệ.', status: 400 }
@@ -182,7 +184,8 @@ function validateInitFiles(
       return { ok: false, error: 'Dung lượng tệp vượt quá giới hạn cho phép.', status: 400 }
     }
 
-    totalBytes += byteSize
+    const normalizedByteSize = Math.trunc(byteSize)
+    totalBytes += normalizedByteSize
     const ext = extensionForMime(mimeType)
     let canonicalName: string
     if (record.role === 'strip') {
@@ -201,7 +204,7 @@ function validateInitFiles(
       role: record.role,
       name: canonicalName,
       mimeType,
-      byteSize: Math.trunc(byteSize),
+      byteSize: normalizedByteSize,
     })
   }
 
@@ -212,7 +215,7 @@ function validateInitFiles(
     return { ok: false, error: 'Bộ ảnh vượt quá giới hạn 60 MB.', status: 413 }
   }
 
-  return { ok: true, files: parsed }
+  return { ok: true, files: parsed, totalBytes }
 }
 
 function validateCompleteFiles(
@@ -274,6 +277,33 @@ async function checkRateLimit(
     return { allowed: false, lookupFailed: true }
   }
   return { allowed: (count ?? 0) < uploadLimitPerHour, lookupFailed: false }
+}
+
+const r2QuotaExceededError = 'Bộ nhớ lưu trữ ảnh đã đạt giới hạn tối đa. Tạm ngừng nhận album mới.'
+const r2QuotaLookupError = 'Không thể kiểm tra hạn mức bộ nhớ lưu trữ lúc này.'
+
+async function checkR2StorageQuota(
+  admin: ReturnType<typeof createClient>,
+  incomingBytes: number,
+): Promise<{ allowed: boolean; lookupFailed: boolean }> {
+  const maxBytes = parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES'))
+  if (maxBytes <= 0) {
+    return { allowed: false, lookupFailed: false }
+  }
+  const { data, error } = await admin.rpc('get_active_r2_storage_bytes')
+  if (error) {
+    console.error('R2 storage quota lookup failed')
+    return { allowed: false, lookupFailed: true }
+  }
+  const usedBytes = typeof data === 'number' ? data : Number(data)
+  if (!Number.isFinite(usedBytes) || usedBytes < 0) {
+    console.error('R2 storage quota returned invalid byte count')
+    return { allowed: false, lookupFailed: true }
+  }
+  return {
+    allowed: hasR2StorageCapacity(usedBytes, incomingBytes, maxBytes),
+    lookupFailed: false,
+  }
 }
 
 Deno.serve(async (request: Request) => {
@@ -352,6 +382,14 @@ Deno.serve(async (request: Request) => {
       const validation = validateInitFiles(layoutId, payload.files)
       if (!validation.ok) {
         return json({ error: validation.error }, validation.status, origin, allowedOrigins)
+      }
+
+      const storageQuota = await checkR2StorageQuota(admin, validation.totalBytes)
+      if (storageQuota.lookupFailed) {
+        return json({ error: r2QuotaLookupError }, 503, origin, allowedOrigins)
+      }
+      if (!storageQuota.allowed) {
+        return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
       }
 
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -484,13 +522,13 @@ Deno.serve(async (request: Request) => {
 
       const objectKeys = submittedFiles.map((file) => stripR2Prefix(file.storagePath))
       let verifiedSizes: number[]
+      let totalActualBytes = 0
       try {
         const headResults = await runWithConcurrency(submittedFiles, uploadConcurrency, async (file) => {
           const head = await headR2Object(stripR2Prefix(file.storagePath))
           return { file, head }
         })
 
-        let totalActualBytes = 0
         verifiedSizes = []
         let invalidUpload = false
 
@@ -522,6 +560,18 @@ Deno.serve(async (request: Request) => {
         await cleanupR2Keys(objectKeys)
         await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
         return json({ error: 'Không thể xác minh tệp ảnh đã tải lên.' }, 400, origin, allowedOrigins)
+      }
+
+      const completeQuota = await checkR2StorageQuota(admin, totalActualBytes)
+      if (completeQuota.lookupFailed || !completeQuota.allowed) {
+        await cleanupR2Keys(objectKeys)
+        await admin.from('photobooth_albums').delete().eq('id', album.id).eq('status', 'draft')
+        return json(
+          { error: completeQuota.lookupFailed ? r2QuotaLookupError : r2QuotaExceededError },
+          completeQuota.lookupFailed ? 503 : 507,
+          origin,
+          allowedOrigins,
+        )
       }
 
       try {
@@ -679,6 +729,17 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Bộ ảnh vượt quá giới hạn 60 MB.' }, 413, origin, allowedOrigins)
   }
 
+  const useR2 = isR2Configured()
+  if (useR2) {
+    const storageQuota = await checkR2StorageQuota(admin, totalBytes)
+    if (storageQuota.lookupFailed) {
+      return json({ error: r2QuotaLookupError }, 503, origin, allowedOrigins)
+    }
+    if (!storageQuota.allowed) {
+      return json({ error: r2QuotaExceededError }, 507, origin, allowedOrigins)
+    }
+  }
+
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data: album, error: albumError } = await admin
     .from('photobooth_albums')
@@ -705,7 +766,6 @@ Deno.serve(async (request: Request) => {
     })),
   ]
 
-  const useR2 = isR2Configured()
   const uploadedR2Keys: string[] = []
   const uploadedSupabasePaths: string[] = []
 

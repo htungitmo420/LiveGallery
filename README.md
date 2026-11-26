@@ -77,6 +77,7 @@ Khi mở album, Edge Function `album-manifest` tự động tạo URL `GET` có 
    - Prefix: để trống để áp dụng cho toàn bucket
    - Action: Delete uploaded objects after 30 days
    - Quy tắc này khớp với `expires_at` sau 30 ngày trong cơ sở dữ liệu và giữ dung lượng trong hạn mức 10 GB miễn phí.
+5. Chặn cứng tự động ở mức 9.5 GB: `album-publish` tự cộng tổng dung lượng các tệp `r2:` còn hạn qua hàm RPC `get_active_r2_storage_bytes()`. Nếu vượt `9_500_000_000` byte (có thể tùy chỉnh bằng secret `R2_MAX_STORAGE_BYTES`, hoặc đặt `0` để ngắt upload khẩn cấp), hệ thống sẽ từ chối tải lên mới (`HTTP 507`) trong khi khách cũ vẫn xem và tải album bình thường.
 
 ## Cấu hình Secrets và triển khai Supabase Edge Functions
 

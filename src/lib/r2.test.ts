@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import indexHtmlRaw from '../../index.html?raw'
 import vercelJsonRaw from '../../vercel.json?raw'
 import {
+  DEFAULT_R2_MAX_STORAGE_BYTES,
   EMPTY_SHA256_HEX,
   buildSigV4PresignedUrl,
   computeUploadManifestHash,
@@ -10,6 +11,7 @@ import {
   createUploadToken,
   deleteR2Object,
   encodeS3Key,
+  hasR2StorageCapacity,
   headR2Object,
   isAllowedOrigin,
   isR2Configured,
@@ -17,6 +19,7 @@ import {
   isSafeAlbumR2Path,
   isSafeR2Key,
   parseAllowedOrigins,
+  parseR2MaxStorageBytes,
   putR2Object,
   readR2Config,
   runWithConcurrency,
@@ -191,6 +194,33 @@ describe('R2 configuration & storage path security checks', () => {
     expect(isSafeAlbumR2Path(`r2:11111111-1111-1111-1111-111111111111/${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
     expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/../${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
     expect(isSafeAlbumR2Path(`${TEST_ALBUM_ID}/${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
+  })
+
+  it('enforces the 9.5 GB default R2 hard storage cap and validates overrides safely', () => {
+    expect(DEFAULT_R2_MAX_STORAGE_BYTES).toBe(9_500_000_000)
+
+    expect(parseR2MaxStorageBytes(undefined)).toBe(9_500_000_000)
+    expect(parseR2MaxStorageBytes('')).toBe(9_500_000_000)
+    expect(parseR2MaxStorageBytes('  ')).toBe(9_500_000_000)
+    expect(parseR2MaxStorageBytes('5000000000')).toBe(5_000_000_000)
+    expect(parseR2MaxStorageBytes('0')).toBe(0)
+
+    // Malformed, negative, or unsafe values fall back to default cap
+    expect(parseR2MaxStorageBytes('-100')).toBe(9_500_000_000)
+    expect(parseR2MaxStorageBytes('9.5gb')).toBe(9_500_000_000)
+    expect(parseR2MaxStorageBytes('99999999999999999999')).toBe(9_500_000_000)
+
+    // Exact boundary behavior
+    expect(hasR2StorageCapacity(9_490_000_000, 10_000_000)).toBe(true)
+    expect(hasR2StorageCapacity(9_490_000_000, 10_000_001)).toBe(false)
+    expect(hasR2StorageCapacity(9_500_000_000, 1)).toBe(false)
+
+    // Kill-switch (0) and invalid numbers fail closed
+    expect(hasR2StorageCapacity(0, 1024, 0)).toBe(false)
+    expect(hasR2StorageCapacity(0, 0, 0)).toBe(false)
+    expect(hasR2StorageCapacity(-1, 100)).toBe(false)
+    expect(hasR2StorageCapacity(Number.NaN, 100)).toBe(false)
+    expect(hasR2StorageCapacity(0, Number.POSITIVE_INFINITY)).toBe(false)
   })
 })
 
