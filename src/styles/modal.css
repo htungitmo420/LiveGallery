@@ -129,3 +129,108 @@
   border-color: var(--ink);
 }
 
+/* On-Phone QR Share Modal */
+.qr-modal__stage {
+  padding: 18px;
+}
+.qr-modal__card {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(17, 16, 15, 0.14);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 268px;
+  padding: 12px 12px 14px;
+  width: 100%;
+}
+.qr-modal__svg {
+  display: block;
+  height: auto;
+  max-width: 244px;
+  width: 100%;
+}
+.qr-modal__stamp {
+  align-items: center;
+  border-top: 1px dashed rgba(17, 16, 15, 0.2);
+  color: #11100f;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  padding-top: 8px;
+  text-align: center;
+  width: 100%;
+}
+.qr-modal__stamp strong {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.qr-modal__stamp span {
+  color: #544d46;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qr-modal__action {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+}
+
+/* 1-Tap Save All Modal */
+.save-all-modal__strip {
+  padding: 14px;
+}
+.save-all-modal__grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+  max-width: 340px;
+  width: 100%;
+}
+.save-all-modal__thumb,
+.save-all-modal__more {
+  aspect-ratio: 3 / 4;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+.save-all-modal__thumb img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+.save-all-modal__more {
+  align-items: center;
+  color: var(--accent-text);
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  justify-content: center;
+}
+.save-all-modal__note {
+  background: var(--status-warn-bg);
+  border: 1px solid var(--status-warn-line);
+  border-radius: var(--radius-sm);
+  color: var(--status-warn-ink);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 8px 11px;
+}
+.save-all-modal__actions {
+  flex-direction: column;
+}
+
+

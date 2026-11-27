@@ -5,6 +5,7 @@ export type {
   GalleryMediaKind,
   GalleryStickerAsset,
   MobilePlatform,
+  SaveAllMediaOutcome,
   SaveMediaOutcome,
 } from './gallery/types'
 
@@ -18,17 +19,23 @@ export {
 
 export {
   canShareMediaFile,
+  canShareMediaFiles,
   clearMediaFileCache,
   detectMobilePlatform,
+  downloadAllGalleryMedia,
   downloadGalleryMedia,
   fileToDataUrl,
   isMobileDevice,
   normalizeMediaFileName,
   preloadGalleryMedia,
+  prepareAllGalleryMediaFiles,
   prepareGalleryMediaFile,
+  saveAllMediaFilesToDevice,
   saveMediaFileToDevice,
   shareMediaFileImmediately,
+  shareMediaFilesImmediately,
   triggerBrowserDownload,
+  triggerStaggeredBrowserDownloads,
 } from './gallery/mediaSave'
 
 export {

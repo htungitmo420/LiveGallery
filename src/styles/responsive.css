@@ -164,6 +164,26 @@
     height: 38px;
     min-width: 34px;
   }
+  .album-strip {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .album-strip__right {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .album-strip__tools {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .album-tool-button {
+    min-height: 44px;
+    padding: 0 12px;
+  }
+  .album-tool-button--accent {
+    flex: 1 1 auto;
+  }
 }
 
 @media (max-width: 560px) {
@@ -288,13 +308,17 @@
     padding: 0 11px;
   }
   .album-strip {
+    gap: 6px;
     margin-bottom: 6px;
   }
   .album-strip__info h1 {
-    font-size: 20px;
+    font-size: 19px;
   }
   .album-strip__count {
     display: none;
+  }
+  .album-tool-button {
+    font-size: 13px;
   }
   .viewer {
     border-radius: var(--radius-sm);

@@ -134,7 +134,7 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
         url,
         thumbnailUrl,
         mimeType: stringOrEmpty(media.mimeType),
-        fileName: stringOrEmpty(media.fileName) || `khoanh-khac-${index + 1}`,
+        fileName: stringOrEmpty(media.fileName) || `photo-${index + 1}`,
         width: nullableNumber(media.width),
         height: nullableNumber(media.height),
         durationMs: nullableNumber(media.durationMs),

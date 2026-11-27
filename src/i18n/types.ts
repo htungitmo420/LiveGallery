@@ -36,6 +36,10 @@ export interface GalleryMessages {
     claimSubmit: string
     claimInvalid: string
     recentTitle: string
+    recentHint: string
+    recentFrameCount: (count: number) => string
+    clearRecent: string
+    clearRecentAria: string
     removeRecentAria: (title: string) => string
     contactSheetBar: string
     mediaTag: string
@@ -62,6 +66,15 @@ export interface GalleryMessages {
     downloadAria: string
     downloadingLabel: string
     downloadLabel: string
+    qrAria: string
+    qrLabel: string
+    saveAllAria: (count: number) => string
+    saveAllLabel: (count: number) => string
+    preparingAllLabel: (done: number, total: number) => string
+    saveAllSharedNotice: (count: number) => string
+    saveAllSharedPartialNotice: (saved: number, skipped: number) => string
+    saveAllDownloadedNotice: (count: number) => string
+    saveAllError: string
     totalFramesAria: (count: number) => string
     framesUnit: string
     viewerAria: string
@@ -93,6 +106,31 @@ export interface GalleryMessages {
     photosApp: string
     retryShare: string
     close: string
+  }
+  saveAllModal: {
+    tag: string
+    readyTitle: (count: number) => string
+    manualTitle: string
+    closeAria: string
+    readyHint: (count: number) => string
+    skippedNote: (skipped: number) => string
+    manualHint: string
+    shareNowAction: (count: number) => string
+    downloadFallbackAction: (count: number) => string
+    copyLinkHintAction: string
+    linkCopied: string
+    close: string
+  }
+  qrModal: {
+    tag: string
+    title: string
+    closeAria: string
+    qrAlt: (title: string) => string
+    hint: string
+    copyLink: string
+    copiedLink: string
+    copyCode: string
+    copiedCode: string
   }
   decor: {
     emptyTitle: string

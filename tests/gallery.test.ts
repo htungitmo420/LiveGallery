@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAlbumPath,
   clearAlbumManifestCache,
+  clearMediaFileCache,
   detectMobilePlatform,
   fetchAlbum,
   getShareCodeFromPath,
@@ -10,11 +11,14 @@ import {
   normalizeMediaFileName,
   normalizeShareCode,
   parseManifest,
+  prepareAllGalleryMediaFiles,
+  saveAllMediaFilesToDevice,
   saveMediaFileToDevice,
 } from '../src/lib/gallery'
 
 afterEach(() => {
   clearAlbumManifestCache()
+  clearMediaFileCache()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -171,11 +175,13 @@ describe('mobile photo export helpers', () => {
     expect(isMobileDevice('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 0)).toBe(false)
   })
 
-  it('normalizes media filenames to gallery-compatible extensions', () => {
+  it('normalizes media filenames to English gallery-compatible extensions', () => {
     expect(normalizeMediaFileName('photobooth.webp', 'image/jpeg')).toBe('photobooth.jpg')
-    expect(normalizeMediaFileName('khoanh-khac', 'image/jpeg')).toBe('khoanh-khac.jpg')
-    expect(normalizeMediaFileName('khoanh-khac.gif', 'image/gif')).toBe('khoanh-khac.gif')
-    expect(normalizeMediaFileName('  anh 01.png  ', 'image/png')).toBe('anh-01.png')
+    expect(normalizeMediaFileName('khoanh-khac', 'image/jpeg')).toBe('photobooth.jpg')
+    expect(normalizeMediaFileName('khoanh-khac.gif', 'image/gif')).toBe('photobooth.gif')
+    expect(normalizeMediaFileName('anh-01.jpg', 'image/jpeg')).toBe('photo-01.jpg')
+    expect(normalizeMediaFileName('  anh 01.png  ', 'image/png')).toBe('photo-01.png')
+    expect(normalizeMediaFileName('', 'image/jpeg')).toBe('photo.jpg')
   })
 
   it('shares files directly on mobile without text fields so iOS and Android show Save to Photos', async () => {
@@ -213,6 +219,193 @@ describe('mobile photo export helpers', () => {
     expect(outcome.canRetryShare).toBe(true)
     expect(outcome.previewUrl).toMatch(/^data:image\/jpeg;base64,/)
     vi.unstubAllGlobals()
+  })
+
+  it('shares all album files in one tap on mobile via navigator.share({ files })', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const canShare = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)',
+      maxTouchPoints: 5,
+      share,
+      canShare,
+    })
+
+    const files = [
+      new File([new Uint8Array([255, 216, 255])], 'strip.jpg', { type: 'image/jpeg' }),
+      new File([new Uint8Array([255, 216, 255])], 'photo-01.jpg', { type: 'image/jpeg' }),
+      new File([new Uint8Array([255, 216, 255])], 'photo-02.jpg', { type: 'image/jpeg' }),
+    ]
+    const outcome = await saveAllMediaFilesToDevice(files)
+
+    expect(outcome.status).toBe('shared')
+    expect(outcome.files).toHaveLength(3)
+    expect(outcome.skippedCount).toBe(0)
+    expect(canShare).toHaveBeenCalledWith({ files })
+    expect(share).toHaveBeenCalledWith({ files })
+  })
+
+  it('returns ready-to-share on mobile when user activation expires after fetching all files', async () => {
+    const notAllowed = Object.assign(new Error('User activation required'), { name: 'NotAllowedError' })
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)',
+      maxTouchPoints: 5,
+      share: vi.fn().mockRejectedValue(notAllowed),
+      canShare: vi.fn().mockReturnValue(true),
+    })
+
+    const files = [
+      new File([new Uint8Array([255, 216, 255])], 'strip.jpg', { type: 'image/jpeg' }),
+      new File([new Uint8Array([255, 216, 255])], 'photo-01.jpg', { type: 'image/jpeg' }),
+    ]
+    const outcome = await saveAllMediaFilesToDevice(files)
+
+    expect(outcome.status).toBe('ready-to-share')
+    expect(outcome.files).toEqual(files)
+    expect(outcome.skippedCount).toBe(0)
+  })
+
+  it('falls back to still images when mobile canShare rejects mixed image + GIF batches', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const canShare = vi.fn().mockImplementation(({ files }: { files: File[] }) =>
+      files.every((file) => file.type !== 'image/gif'),
+    )
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)',
+      maxTouchPoints: 5,
+      share,
+      canShare,
+    })
+
+    const strip = new File([new Uint8Array([255, 216, 255])], 'strip.jpg', { type: 'image/jpeg' })
+    const raw = new File([new Uint8Array([255, 216, 255])], 'photo-01.jpg', { type: 'image/jpeg' })
+    const gif = new File([new Uint8Array([71, 73, 70])], 'boomerang.gif', { type: 'image/gif' })
+    const outcome = await saveAllMediaFilesToDevice([strip, raw, gif])
+
+    expect(outcome.status).toBe('shared')
+    expect(outcome.files).toEqual([strip, raw])
+    expect(outcome.skippedCount).toBe(1)
+    expect(share).toHaveBeenCalledWith({ files: [strip, raw] })
+  })
+
+  it('returns manual fallback on mobile when multi-file share is unsupported', async () => {
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)',
+      maxTouchPoints: 5,
+    })
+
+    const files = [
+      new File([new Uint8Array([255, 216, 255])], 'strip.jpg', { type: 'image/jpeg' }),
+      new File([new Uint8Array([255, 216, 255])], 'photo-01.jpg', { type: 'image/jpeg' }),
+    ]
+    const outcome = await saveAllMediaFilesToDevice(files)
+
+    expect(outcome.status).toBe('manual')
+    expect(outcome.files).toEqual(files)
+  })
+
+  it('triggers staggered browser downloads for all files on desktop', async () => {
+    const clickedDownloads: string[] = []
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      maxTouchPoints: 0,
+    })
+    vi.stubGlobal('window', {
+      setTimeout: vi.fn(),
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn((file: File) => `blob:${file.name}`),
+      revokeObjectURL: vi.fn(),
+    })
+    vi.stubGlobal('document', {
+      body: { appendChild: vi.fn() },
+      createElement: vi.fn(() => {
+        const anchor = {
+          style: { display: '' },
+          href: '',
+          download: '',
+          click: () => clickedDownloads.push(anchor.download),
+          remove: vi.fn(),
+        }
+        return anchor
+      }),
+    })
+
+    const files = [
+      new File([new Uint8Array([255, 216, 255])], 'strip.jpg', { type: 'image/jpeg' }),
+      new File([new Uint8Array([255, 216, 255])], 'photo-01.jpg', { type: 'image/jpeg' }),
+    ]
+    const outcome = await saveAllMediaFilesToDevice(files, { desktopDelayMs: 0 })
+
+    expect(outcome.status).toBe('downloaded')
+    expect(outcome.files).toEqual(files)
+    expect(clickedDownloads).toEqual(['strip.jpg', 'photo-01.jpg'])
+  })
+
+  it('prepares all gallery items in order with progress reporting and unique filenames', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array([255, 216, 255]), {
+          status: 200,
+          headers: { 'Content-Type': 'image/jpeg' },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const items = [
+      {
+        id: '1',
+        kind: 'image' as const,
+        url: 'https://example.com/1.jpg',
+        thumbnailUrl: null,
+        mimeType: 'image/jpeg',
+        fileName: 'photo.jpg',
+        width: 1200,
+        height: 1800,
+        durationMs: null,
+        sortOrder: 0,
+      },
+      {
+        id: '2',
+        kind: 'image' as const,
+        url: 'https://example.com/2.jpg',
+        thumbnailUrl: null,
+        mimeType: 'image/jpeg',
+        fileName: 'photo.jpg',
+        width: 1200,
+        height: 1800,
+        durationMs: null,
+        sortOrder: 1,
+      },
+      {
+        id: '3',
+        kind: 'image' as const,
+        url: 'https://example.com/3.jpg',
+        thumbnailUrl: null,
+        mimeType: 'image/jpeg',
+        fileName: 'strip.jpg',
+        width: 1200,
+        height: 3600,
+        durationMs: null,
+        sortOrder: 2,
+      },
+    ]
+
+    const progressEvents: Array<[number, number]> = []
+    const files = await prepareAllGalleryMediaFiles(items, {
+      concurrency: 2,
+      onProgress: (done, total) => progressEvents.push([done, total]),
+    })
+
+    expect(files.map((f) => f.name)).toEqual(['photo.jpg', 'photo-02.jpg', 'strip.jpg'])
+    expect(progressEvents[0]).toEqual([0, 3])
+    expect(progressEvents[progressEvents.length - 1]).toEqual([3, 3])
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    // Second call uses in-memory mediaFileCache (0 new fetches)
+    await prepareAllGalleryMediaFiles(items)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
 

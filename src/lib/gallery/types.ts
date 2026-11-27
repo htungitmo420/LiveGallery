@@ -52,3 +52,9 @@ export interface SaveMediaOutcome {
   previewUrl?: string
   canRetryShare?: boolean
 }
+
+export interface SaveAllMediaOutcome {
+  status: 'shared' | 'downloaded' | 'cancelled' | 'ready-to-share' | 'manual'
+  files: File[]
+  skippedCount: number
+}

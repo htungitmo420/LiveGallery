@@ -1,12 +1,19 @@
 import { normalizeShareCode, type GalleryAlbum } from './gallery'
 
 const RECENT_ALBUMS_STORAGE_KEY = 'livegallery-recent-albums'
-const MAX_RECENT_ALBUMS = 4
+export const MAX_RECENT_ALBUMS = 8
 
 export interface RecentAlbumEntry {
   shareCode: string
   title: string
   openedAt: string
+  itemCount?: number
+}
+
+function parseItemCount(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
+  const rounded = Math.floor(raw)
+  return rounded >= 0 ? rounded : undefined
 }
 
 export function readRecentAlbums(): RecentAlbumEntry[] {
@@ -23,9 +30,10 @@ export function readRecentAlbums(): RecentAlbumEntry[] {
       const shareCode = normalizeShareCode(typeof record.shareCode === 'string' ? record.shareCode : '')
       const title = typeof record.title === 'string' ? record.title.trim() : ''
       const openedAt = typeof record.openedAt === 'string' ? record.openedAt : ''
+      const itemCount = parseItemCount(record.itemCount)
       if (!shareCode || !title || seen.has(shareCode)) continue
       seen.add(shareCode)
-      valid.push({ shareCode, title, openedAt })
+      valid.push(itemCount === undefined ? { shareCode, title, openedAt } : { shareCode, title, openedAt, itemCount })
       if (valid.length >= MAX_RECENT_ALBUMS) break
     }
     return valid
@@ -34,15 +42,26 @@ export function readRecentAlbums(): RecentAlbumEntry[] {
   }
 }
 
-export function recordRecentAlbum(album: Pick<GalleryAlbum, 'shareCode' | 'title'>): void {
+export function recordRecentAlbum(
+  album: Pick<GalleryAlbum, 'shareCode' | 'title'> & {
+    items?: readonly unknown[]
+    itemCount?: number
+  },
+): void {
   try {
+    const shareCode = normalizeShareCode(album.shareCode)
+    const title = album.title.trim()
+    if (!shareCode || !title) return
+    const itemCount = parseItemCount(album.itemCount ?? album.items?.length)
+    const entry: RecentAlbumEntry = {
+      shareCode,
+      title,
+      openedAt: new Date().toISOString(),
+      ...(itemCount === undefined ? {} : { itemCount }),
+    }
     const next: RecentAlbumEntry[] = [
-      {
-        shareCode: album.shareCode,
-        title: album.title,
-        openedAt: new Date().toISOString(),
-      },
-      ...readRecentAlbums().filter((item) => item.shareCode !== album.shareCode),
+      entry,
+      ...readRecentAlbums().filter((item) => item.shareCode !== shareCode),
     ].slice(0, MAX_RECENT_ALBUMS)
     localStorage.setItem(RECENT_ALBUMS_STORAGE_KEY, JSON.stringify(next))
   } catch {
@@ -51,11 +70,21 @@ export function recordRecentAlbum(album: Pick<GalleryAlbum, 'shareCode' | 'title
 }
 
 export function removeRecentAlbumEntry(shareCode: string): RecentAlbumEntry[] {
-  const next = readRecentAlbums().filter((item) => item.shareCode !== shareCode)
+  const normalized = normalizeShareCode(shareCode)
+  const next = readRecentAlbums().filter((item) => item.shareCode !== normalized)
   try {
     localStorage.setItem(RECENT_ALBUMS_STORAGE_KEY, JSON.stringify(next))
   } catch {
     /* Storage is optional. */
   }
   return next
+}
+
+export function clearRecentAlbums(): RecentAlbumEntry[] {
+  try {
+    localStorage.removeItem(RECENT_ALBUMS_STORAGE_KEY)
+  } catch {
+    /* Storage is optional. */
+  }
+  return []
 }

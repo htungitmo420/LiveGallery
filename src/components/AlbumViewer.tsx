@@ -13,18 +13,24 @@ import { useLocale } from '../i18n/useLocale'
 import type { ManualSaveState } from '../SavePhotoModal'
 import { formatAlbumDate, padFrame } from '../lib/format'
 import {
+  buildAlbumPath,
+  downloadAllGalleryMedia,
   downloadGalleryMedia,
   preloadGalleryMedia,
   type GalleryAlbum,
   type GalleryMedia,
+  type SaveAllMediaOutcome,
   type SaveMediaOutcome,
 } from '../lib/gallery'
 import { recordRecentAlbum } from '../lib/recentAlbums'
 import { BrandLogo, Icon, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
+import type { SaveAllModalState } from './SaveAllModal'
 
 const loadDecorStudio = () => import('../DecorStudio').then((mod) => ({ default: mod.DecorStudio }))
 const DecorStudio = lazy(loadDecorStudio)
 const SavePhotoModal = lazy(() => import('../SavePhotoModal').then((mod) => ({ default: mod.SavePhotoModal })))
+const SaveAllModal = lazy(() => import('./SaveAllModal').then((mod) => ({ default: mod.SaveAllModal })))
+const AlbumQrModal = lazy(() => import('./AlbumQrModal').then((mod) => ({ default: mod.AlbumQrModal })))
 
 function MediaView({
   item,
@@ -81,13 +87,18 @@ export function AlbumViewer({
   const [copied, setCopied] = useState(false)
   const [decorating, setDecorating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [savingAll, setSavingAll] = useState(false)
+  const [saveAllProgress, setSaveAllProgress] = useState<{ done: number; total: number } | null>(null)
   const [manualSave, setManualSave] = useState<ManualSaveState | null>(null)
+  const [saveAllModal, setSaveAllModal] = useState<SaveAllModalState | null>(null)
+  const [qrOpen, setQrOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const viewerRef = useRef<HTMLDivElement>(null)
   const pointerStart = useRef<number | null>(null)
   const refreshedBrokenMedia = useRef(false)
   const current = album.items[activeIndex]
   const heroLoaded = loadedAlbumCode === album.shareCode
+  const albumShareUrl = `${window.location.origin}${buildAlbumPath(album.shareCode)}${locale === 'vi' ? '' : `?lang=${locale}`}`
 
   useEffect(() => {
     recordRecentAlbum(album)
@@ -123,7 +134,7 @@ export function AlbumViewer({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (decorating || manualSave) return
+      if (decorating || manualSave || saveAllModal || qrOpen) return
       if (event.key === 'ArrowLeft') move(-1)
       if (event.key === 'ArrowRight') move(1)
       if (event.key === 'Home') setActiveIndex(0)
@@ -131,7 +142,7 @@ export function AlbumViewer({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [album.items.length, decorating, manualSave, move])
+  }, [album.items.length, decorating, manualSave, move, qrOpen, saveAllModal])
 
   const enterFullscreen = async () => {
     if (!viewerRef.current) return
@@ -144,7 +155,7 @@ export function AlbumViewer({
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href)
+      await navigator.clipboard.writeText(albumShareUrl)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
     } catch {
@@ -166,8 +177,30 @@ export function AlbumViewer({
     }
   }
 
+  const applySaveAllOutcome = (outcome: SaveAllMediaOutcome) => {
+    if (outcome.status === 'ready-to-share' || outcome.status === 'manual') {
+      setSaveAllModal({
+        mode: outcome.status,
+        files: outcome.files,
+        skippedCount: outcome.skippedCount,
+      })
+      return
+    }
+    if (outcome.status === 'shared') {
+      setNotice(
+        outcome.skippedCount > 0
+          ? messages.viewer.saveAllSharedPartialNotice(outcome.files.length, outcome.skippedCount)
+          : messages.viewer.saveAllSharedNotice(outcome.files.length),
+      )
+      return
+    }
+    if (outcome.status === 'downloaded') {
+      setNotice(messages.viewer.saveAllDownloadedNotice(outcome.files.length))
+    }
+  }
+
   const downloadCurrent = async () => {
-    if (!current || downloading) return
+    if (!current || downloading || savingAll) return
     setDownloading(true)
     setNotice('')
     try {
@@ -185,6 +218,35 @@ export function AlbumViewer({
       }
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const saveAllPhotos = async () => {
+    if (album.items.length === 0 || savingAll || downloading) return
+    setSavingAll(true)
+    setSaveAllProgress({ done: 0, total: album.items.length })
+    setNotice('')
+    const onProgress = (done: number, total: number) => {
+      setSaveAllProgress({ done, total })
+    }
+    try {
+      const outcome = await downloadAllGalleryMedia(album.items, { onProgress })
+      applySaveAllOutcome(outcome)
+    } catch {
+      try {
+        const fresh = await onRefresh()
+        if (fresh.items.length === 0) throw new Error(messages.viewer.missingPhotoError)
+        const outcome = await downloadAllGalleryMedia(fresh.items, {
+          bypassCache: true,
+          onProgress,
+        })
+        applySaveAllOutcome(outcome)
+      } catch (error) {
+        setNotice(error instanceof Error ? localizeErrorMessage(error.message, locale) : messages.viewer.saveAllError)
+      }
+    } finally {
+      setSavingAll(false)
+      setSaveAllProgress(null)
     }
   }
 
@@ -275,7 +337,7 @@ export function AlbumViewer({
             <button
               aria-label={messages.viewer.downloadAria}
               className="icon-button icon-button--accent"
-              disabled={downloading}
+              disabled={downloading || savingAll}
               onClick={() => void downloadCurrent()}
               type="button"
             >
@@ -300,9 +362,38 @@ export function AlbumViewer({
               <span>{formatAlbumDate(album.createdAt, locale)}</span>
             </p>
           </div>
-          <div className="album-strip__count" aria-label={messages.viewer.totalFramesAria(album.items.length)}>
-            <strong>{padFrame(album.items.length)}</strong>
-            <span>{messages.viewer.framesUnit}</span>
+          <div className="album-strip__right">
+            <div className="album-strip__tools">
+              <button
+                aria-label={messages.viewer.qrAria}
+                className="album-tool-button"
+                onClick={() => setQrOpen(true)}
+                type="button"
+              >
+                <Icon name="qr" size={16} />
+                <span>{messages.viewer.qrLabel}</span>
+              </button>
+              {album.items.length > 1 && (
+                <button
+                  aria-label={messages.viewer.saveAllAria(album.items.length)}
+                  className="album-tool-button album-tool-button--accent"
+                  disabled={savingAll || downloading}
+                  onClick={() => void saveAllPhotos()}
+                  type="button"
+                >
+                  <Icon name="download-all" size={16} />
+                  <span>
+                    {savingAll && saveAllProgress
+                      ? messages.viewer.preparingAllLabel(saveAllProgress.done, saveAllProgress.total)
+                      : messages.viewer.saveAllLabel(album.items.length)}
+                  </span>
+                </button>
+              )}
+            </div>
+            <div className="album-strip__count" aria-label={messages.viewer.totalFramesAria(album.items.length)}>
+              <strong>{padFrame(album.items.length)}</strong>
+              <span>{messages.viewer.framesUnit}</span>
+            </div>
           </div>
         </section>
 
@@ -431,6 +522,28 @@ export function AlbumViewer({
             item={manualSave}
             onClose={() => setManualSave(null)}
             onShared={() => setNotice(messages.viewer.sharedModalNotice)}
+          />
+        </Suspense>
+      )}
+
+      {saveAllModal && (
+        <Suspense fallback={null}>
+          <SaveAllModal
+            onClose={() => setSaveAllModal(null)}
+            onCompleted={(message) => setNotice(message)}
+            previews={album.items.map((item) => item.thumbnailUrl ?? item.url)}
+            shareUrl={albumShareUrl}
+            state={saveAllModal}
+          />
+        </Suspense>
+      )}
+
+      {qrOpen && (
+        <Suspense fallback={null}>
+          <AlbumQrModal
+            album={album}
+            onClose={() => setQrOpen(false)}
+            shareUrl={albumShareUrl}
           />
         </Suspense>
       )}

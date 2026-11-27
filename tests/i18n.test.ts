@@ -11,7 +11,7 @@ import {
   normalizeLocale,
 } from '../src/i18n/core'
 import { localizeStickerName } from '../src/i18n/stickers'
-import { formatAlbumDate } from '../src/lib/format'
+import { formatAlbumDate, formatRecentOpenedAt } from '../src/lib/format'
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()
@@ -60,9 +60,18 @@ describe('LiveGallery i18n', () => {
     for (const { code } of LOCALE_OPTIONS) {
       const msg = getMessages(code)
       expect(msg.landing.claimSubmit.length).toBeGreaterThan(0)
+      expect(msg.landing.clearRecent.length).toBeGreaterThan(0)
+      expect(msg.landing.recentFrameCount(9).length).toBeGreaterThan(0)
       expect(msg.viewer.decorateLabel.length).toBeGreaterThan(0)
+      expect(msg.viewer.qrLabel.length).toBeGreaterThan(0)
+      expect(msg.viewer.saveAllLabel(9).length).toBeGreaterThan(0)
+      expect(msg.viewer.preparingAllLabel(4, 9).length).toBeGreaterThan(0)
+      expect(msg.saveAllModal.readyTitle(9).length).toBeGreaterThan(0)
+      expect(msg.qrModal.title.length).toBeGreaterThan(0)
       expect(msg.decor.categories.all.length).toBeGreaterThan(0)
       expect(formatAlbumDate('2026-11-27T12:00:00.000Z', code).length).toBeGreaterThan(0)
+      expect(formatRecentOpenedAt('2026-11-27T12:00:00.000Z', code).length).toBeGreaterThan(0)
+      expect(formatRecentOpenedAt('invalid', code)).toBe('')
       expect(getIntlLocaleTag(code)).toMatch(/^[a-z]{2}-[A-Z]{2}$/)
     }
 

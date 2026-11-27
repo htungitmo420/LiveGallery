@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readRecentAlbums, recordRecentAlbum, removeRecentAlbumEntry } from '../src/lib/recentAlbums'
+import {
+  MAX_RECENT_ALBUMS,
+  clearRecentAlbums,
+  readRecentAlbums,
+  recordRecentAlbum,
+  removeRecentAlbumEntry,
+} from '../src/lib/recentAlbums'
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()
@@ -22,24 +28,50 @@ describe('recent albums persistence', () => {
     vi.unstubAllGlobals()
   })
 
-  it('records newest albums first, deduplicates share codes, and caps at 4 entries', () => {
-    recordRecentAlbum({ shareCode: 'album01', title: 'Album 1' })
-    recordRecentAlbum({ shareCode: 'album02', title: 'Album 2' })
-    recordRecentAlbum({ shareCode: 'album03', title: 'Album 3' })
-    recordRecentAlbum({ shareCode: 'album04', title: 'Album 4' })
-    recordRecentAlbum({ shareCode: 'album05', title: 'Album 5' })
-    recordRecentAlbum({ shareCode: 'album02', title: 'Album 2 Updated' })
+  it('records newest albums first, persists itemCount, deduplicates share codes, and caps at MAX_RECENT_ALBUMS', () => {
+    for (let i = 1; i <= MAX_RECENT_ALBUMS + 2; i += 1) {
+      recordRecentAlbum({
+        shareCode: `album${String(i).padStart(2, '0')}`,
+        title: `Album ${i}`,
+        itemCount: i,
+      })
+    }
+    recordRecentAlbum({
+      shareCode: 'ALBUM04',
+      title: 'Album 4 Updated',
+      items: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    })
 
     const entries = readRecentAlbums()
-    expect(entries.map((item) => item.shareCode)).toEqual(['album02', 'album05', 'album04', 'album03'])
-    expect(entries[0].title).toBe('Album 2 Updated')
+    expect(entries).toHaveLength(MAX_RECENT_ALBUMS)
+    expect(entries[0].shareCode).toBe('album04')
+    expect(entries[0].title).toBe('Album 4 Updated')
+    expect(entries[0].itemCount).toBe(9)
+    expect(entries[1].shareCode).toBe(`album${String(MAX_RECENT_ALBUMS + 2).padStart(2, '0')}`)
+  })
+
+  it('preserves backwards compatibility with legacy entries without itemCount and clears all cleanly', () => {
+    localStorage.setItem(
+      'livegallery-recent-albums',
+      JSON.stringify([
+        { shareCode: 'legacy01', title: 'Legacy Album', openedAt: '2026-11-26T10:00:00.000Z' },
+      ]),
+    )
+
+    const loaded = readRecentAlbums()
+    expect(loaded).toEqual([
+      { shareCode: 'legacy01', title: 'Legacy Album', openedAt: '2026-11-26T10:00:00.000Z' },
+    ])
+
+    expect(clearRecentAlbums()).toEqual([])
+    expect(readRecentAlbums()).toEqual([])
   })
 
   it('removes a single album entry and ignores invalid stored data', () => {
     recordRecentAlbum({ shareCode: 'album01', title: 'Album 1' })
     recordRecentAlbum({ shareCode: 'album02', title: 'Album 2' })
 
-    const remaining = removeRecentAlbumEntry('album01')
+    const remaining = removeRecentAlbumEntry('ALBUM01')
     expect(remaining.map((item) => item.shareCode)).toEqual(['album02'])
     expect(readRecentAlbums().map((item) => item.shareCode)).toEqual(['album02'])
 

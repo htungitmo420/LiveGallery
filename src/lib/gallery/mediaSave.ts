@@ -1,4 +1,4 @@
-import type { GalleryMedia, MobilePlatform, SaveMediaOutcome } from './types'
+import type { GalleryMedia, MobilePlatform, SaveAllMediaOutcome, SaveMediaOutcome } from './types'
 
 export function detectMobilePlatform(
   userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -21,7 +21,7 @@ export function isMobileDevice(
 export function normalizeMediaFileName(
   fileName: string,
   mimeType: string,
-  fallbackBase = 'khoanh-khac',
+  fallbackBase = 'photo',
 ): string {
   const cleanMime = mimeType.split(';', 1)[0].trim().toLowerCase()
   const ext = cleanMime === 'image/gif'
@@ -31,24 +31,33 @@ export function normalizeMediaFileName(
       : 'jpg'
   const trimmed = fileName.trim()
   const withoutExt = trimmed ? trimmed.replace(/\.[a-z0-9]+$/i, '') : fallbackBase
-  const base = withoutExt
+  const sanitized = withoutExt
     .replace(/[^a-z0-9_-]+/gi, '-')
-    .replace(/^-+|-+$/g, '') || fallbackBase
+    .replace(/^-+|-+$/g, '')
+  const localizedToEnglish = sanitized
+    .replace(/^anh(?=$|[-_])/i, 'photo')
+    .replace(/^khoanh[-_]?khac(?=$|[-_])/i, 'photobooth')
+  const base = localizedToEnglish || fallbackBase
   return `${base}.${ext}`
 }
 
-export function canShareMediaFile(file: File): boolean {
+export function canShareMediaFiles(files: File[]): boolean {
+  if (files.length === 0) return false
   if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
     return false
   }
   if (typeof navigator.canShare === 'function') {
     try {
-      return navigator.canShare({ files: [file] })
+      return navigator.canShare({ files })
     } catch {
       return false
     }
   }
   return true
+}
+
+export function canShareMediaFile(file: File): boolean {
+  return canShareMediaFiles([file])
 }
 
 export async function fileToDataUrl(blob: Blob): Promise<string> {
@@ -85,13 +94,113 @@ export function triggerBrowserDownload(file: File): void {
 }
 
 export async function shareMediaFileImmediately(file: File): Promise<boolean> {
-  if (!canShareMediaFile(file)) return false
+  return (await shareMediaFilesImmediately([file])) === 'shared'
+}
+
+export async function shareMediaFilesImmediately(
+  files: File[],
+): Promise<'shared' | 'cancelled' | 'failed'> {
+  if (!canShareMediaFiles(files)) return 'failed'
   try {
-    await navigator.share({ files: [file] })
-    return true
-  } catch {
-    return false
+    // Keep the share payload strictly to { files } so iOS Safari and Android
+    // expose "Save X Images" / "Save to Photos".
+    await navigator.share({ files })
+    return 'shared'
+  } catch (error) {
+    const errorName = (error as { name?: string } | null)?.name
+    if (errorName === 'AbortError') return 'cancelled'
+    return 'failed'
   }
+}
+
+function ensureUniqueFileNames(files: File[]): File[] {
+  const seen = new Set<string>()
+  return files.map((file) => {
+    const key = file.name.toLowerCase()
+    if (!seen.has(key)) {
+      seen.add(key)
+      return file
+    }
+    const dotIndex = file.name.lastIndexOf('.')
+    const base = dotIndex > 0 ? file.name.slice(0, dotIndex) : file.name
+    const ext = dotIndex > 0 ? file.name.slice(dotIndex) : ''
+    let counter = 2
+    let candidate = `${base}-${String(counter).padStart(2, '0')}${ext}`
+    while (seen.has(candidate.toLowerCase())) {
+      counter += 1
+      candidate = `${base}-${String(counter).padStart(2, '0')}${ext}`
+    }
+    seen.add(candidate.toLowerCase())
+    return new File([file], candidate, {
+      type: file.type,
+      lastModified: file.lastModified,
+    })
+  })
+}
+
+function selectShareableMediaFiles(files: File[]): { shareable: File[]; skippedCount: number } {
+  if (files.length === 0) return { shareable: [], skippedCount: 0 }
+  if (canShareMediaFiles(files)) return { shareable: files, skippedCount: 0 }
+
+  // Some mobile browsers reject mixed image+GIF batches in navigator.canShare({ files }).
+  const stills = files.filter((file) => file.type !== 'image/gif')
+  if (stills.length > 0 && stills.length < files.length && canShareMediaFiles(stills)) {
+    return { shareable: stills, skippedCount: files.length - stills.length }
+  }
+
+  // Some OS share sheets cap multi-file batches at 10 items.
+  if (stills.length > 10) {
+    const batch = stills.slice(0, 10)
+    if (canShareMediaFiles(batch)) {
+      return { shareable: batch, skippedCount: files.length - batch.length }
+    }
+  }
+
+  return { shareable: [], skippedCount: files.length }
+}
+
+export async function triggerStaggeredBrowserDownloads(
+  files: File[],
+  delayMs = 160,
+): Promise<void> {
+  for (let index = 0; index < files.length; index += 1) {
+    triggerBrowserDownload(files[index])
+    if (delayMs > 0 && index < files.length - 1) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, delayMs)
+      })
+    }
+  }
+}
+
+export async function saveAllMediaFilesToDevice(
+  files: File[],
+  options?: { desktopDelayMs?: number },
+): Promise<SaveAllMediaOutcome> {
+  if (files.length === 0) {
+    return { status: 'cancelled', files: [], skippedCount: 0 }
+  }
+
+  if (isMobileDevice()) {
+    const { shareable, skippedCount } = selectShareableMediaFiles(files)
+    if (shareable.length > 0) {
+      try {
+        await navigator.share({ files: shareable })
+        return { status: 'shared', files: shareable, skippedCount }
+      } catch (error) {
+        const errorName = (error as { name?: string } | null)?.name
+        if (errorName === 'AbortError') {
+          return { status: 'cancelled', files: shareable, skippedCount }
+        }
+        return { status: 'ready-to-share', files: shareable, skippedCount }
+      }
+    }
+
+    return { status: 'manual', files, skippedCount: 0 }
+  }
+
+  await triggerStaggeredBrowserDownloads(files, options?.desktopDelayMs ?? 160)
+  return { status: 'downloaded', files, skippedCount: 0 }
 }
 
 export async function saveMediaFileToDevice(file: File): Promise<SaveMediaOutcome> {
@@ -182,14 +291,14 @@ export async function prepareGalleryMediaFile(
 
     if (item.kind === 'gif' || rawMime === 'image/gif') {
       const gifBlob = rawBlob.type === 'image/gif' ? rawBlob : new Blob([rawBlob], { type: 'image/gif' })
-      const fileName = normalizeMediaFileName(item.fileName, 'image/gif', 'khoanh-khac')
+      const fileName = normalizeMediaFileName(item.fileName, 'image/gif', 'photobooth')
       return new File([gifBlob], fileName, { type: 'image/gif', lastModified: Date.now() })
     }
 
     const jpegBlob = rawMime === 'image/jpeg'
       ? (rawBlob.type === 'image/jpeg' ? rawBlob : new Blob([rawBlob], { type: 'image/jpeg' }))
       : await convertBlobToJpeg(rawBlob)
-    const fileName = normalizeMediaFileName(item.fileName, 'image/jpeg', 'khoanh-khac')
+    const fileName = normalizeMediaFileName(item.fileName, 'image/jpeg', 'photo')
     return new File([jpegBlob], fileName, { type: 'image/jpeg', lastModified: Date.now() })
   })()
 
@@ -214,4 +323,53 @@ export async function downloadGalleryMedia(
 ): Promise<SaveMediaOutcome> {
   const file = await prepareGalleryMediaFile(item, options)
   return saveMediaFileToDevice(file)
+}
+
+export async function prepareAllGalleryMediaFiles(
+  items: readonly GalleryMedia[],
+  options?: {
+    bypassCache?: boolean
+    concurrency?: number
+    onProgress?: (completed: number, total: number) => void
+  },
+): Promise<File[]> {
+  const total = items.length
+  if (total === 0) return []
+
+  options?.onProgress?.(0, total)
+  const results = new Array<File>(total)
+  const workerCount = Math.max(1, Math.min(options?.concurrency ?? 4, total))
+  let nextIndex = 0
+  let completed = 0
+
+  const worker = async () => {
+    while (nextIndex < total) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      const file = await prepareGalleryMediaFile(items[currentIndex], {
+        bypassCache: options?.bypassCache,
+      })
+      results[currentIndex] = file
+      completed += 1
+      options?.onProgress?.(completed, total)
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return ensureUniqueFileNames(results)
+}
+
+export async function downloadAllGalleryMedia(
+  items: readonly GalleryMedia[],
+  options?: {
+    bypassCache?: boolean
+    concurrency?: number
+    onProgress?: (completed: number, total: number) => void
+    desktopDelayMs?: number
+  },
+): Promise<SaveAllMediaOutcome> {
+  const files = await prepareAllGalleryMediaFiles(items, options)
+  return saveAllMediaFilesToDevice(files, {
+    desktopDelayMs: options?.desktopDelayMs,
+  })
 }

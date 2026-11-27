@@ -22,9 +22,11 @@ export type IconName =
   | 'copy'
   | 'decor'
   | 'download'
+  | 'download-all'
   | 'expand'
   | 'image'
   | 'moon'
+  | 'qr'
   | 'sun'
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
@@ -51,6 +53,13 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
       <path d="M4.5 16.5v3a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-3" />
     </>
   ),
+  'download-all': (
+    <>
+      <path d="M12 3v9.5m0 0 3.5-3.5M12 12.5 8.5 9" />
+      <path d="M4.5 14.5v2.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-2.5" />
+      <path d="M6.5 21h11" />
+    </>
+  ),
   expand: <path d="M8 3.5H3.5V8M16 3.5h4.5V8M8 20.5H3.5V16M16 20.5h4.5V16" />,
   image: (
     <>
@@ -60,6 +69,14 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   moon: <path d="M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10Z" />,
+  qr: (
+    <>
+      <rect height="6.5" width="6.5" x="3.5" y="3.5" />
+      <rect height="6.5" width="6.5" x="14" y="3.5" />
+      <rect height="6.5" width="6.5" x="3.5" y="14" />
+      <path d="M14 14h2.5v2.5H14zM19 14h1.5M14 19.5h3M19 17.5v3" />
+    </>
+  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />

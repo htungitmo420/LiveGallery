@@ -1,9 +1,10 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import type { ThemeMode } from '../hooks/useTheme'
 import { useLocale } from '../i18n/useLocale'
-import { padFrame } from '../lib/format'
+import { formatRecentOpenedAt, padFrame } from '../lib/format'
 import { buildAlbumPath, normalizeShareCode } from '../lib/gallery'
 import {
+  clearRecentAlbums,
   readRecentAlbums,
   removeRecentAlbumEntry,
   type RecentAlbumEntry,
@@ -17,10 +18,20 @@ export function LandingPage({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const [value, setValue] = useState('')
   const [invalidCode, setInvalidCode] = useState(false)
   const [recentAlbums, setRecentAlbums] = useState<RecentAlbumEntry[]>(readRecentAlbums)
+
+  useEffect(() => {
+    const syncRecent = () => setRecentAlbums(readRecentAlbums())
+    window.addEventListener('storage', syncRecent)
+    window.addEventListener('pageshow', syncRecent)
+    return () => {
+      window.removeEventListener('storage', syncRecent)
+      window.removeEventListener('pageshow', syncRecent)
+    }
+  }, [])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -82,26 +93,52 @@ export function LandingPage({
           {recentAlbums.length > 0 && (
             <section aria-labelledby="recent-albums-title" className="recent-albums">
               <div className="recent-albums__head">
-                <h2 id="recent-albums-title">{messages.landing.recentTitle}</h2>
-                <span>{padFrame(recentAlbums.length)}</span>
+                <div className="recent-albums__heading">
+                  <h2 id="recent-albums-title">{messages.landing.recentTitle}</h2>
+                  <span className="recent-albums__count">{padFrame(recentAlbums.length)}</span>
+                </div>
+                <button
+                  aria-label={messages.landing.clearRecentAria}
+                  className="recent-albums__clear"
+                  onClick={() => setRecentAlbums(clearRecentAlbums())}
+                  type="button"
+                >
+                  {messages.landing.clearRecent}
+                </button>
               </div>
+              <p className="recent-albums__hint">{messages.landing.recentHint}</p>
               <ul className="recent-albums__list">
-                {recentAlbums.map((entry) => (
-                  <li className="recent-albums__item" key={entry.shareCode}>
-                    <a className="recent-albums__link" href={buildAlbumPath(entry.shareCode)}>
-                      <span className="recent-albums__code">#{entry.shareCode.toUpperCase()}</span>
-                      <span className="recent-albums__name">{entry.title}</span>
-                    </a>
-                    <button
-                      aria-label={messages.landing.removeRecentAria(entry.title)}
-                      className="recent-albums__remove"
-                      onClick={() => setRecentAlbums(removeRecentAlbumEntry(entry.shareCode))}
-                      type="button"
-                    >
-                      <span aria-hidden="true">×</span>
-                    </button>
-                  </li>
-                ))}
+                {recentAlbums.map((entry) => {
+                  const openedLabel = formatRecentOpenedAt(entry.openedAt, locale)
+                  const metaParts = [
+                    entry.itemCount !== undefined && entry.itemCount > 0
+                      ? messages.landing.recentFrameCount(entry.itemCount)
+                      : '',
+                    openedLabel,
+                  ].filter(Boolean)
+
+                  return (
+                    <li className="recent-albums__item" key={entry.shareCode}>
+                      <a className="recent-albums__link" href={buildAlbumPath(entry.shareCode)}>
+                        <span className="recent-albums__code">#{entry.shareCode.toUpperCase()}</span>
+                        <span className="recent-albums__body">
+                          <span className="recent-albums__name">{entry.title}</span>
+                          {metaParts.length > 0 && (
+                            <span className="recent-albums__meta">{metaParts.join(' · ')}</span>
+                          )}
+                        </span>
+                      </a>
+                      <button
+                        aria-label={messages.landing.removeRecentAria(entry.title)}
+                        className="recent-albums__remove"
+                        onClick={() => setRecentAlbums(removeRecentAlbumEntry(entry.shareCode))}
+                        type="button"
+                      >
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             </section>
           )}
