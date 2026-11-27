@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
-  --font-display: 'Fraunces', 'Cambria', 'Times New Roman', serif;
-  --font-sans: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
+  --font-display: 'Fraunces', 'Playfair Display', 'Cambria', 'Times New Roman', serif;
+  --font-sans: 'Be Vietnam Pro', 'Manrope', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
 
   --bg: #11100f;

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ThemeMode } from '../hooks/useTheme'
+import { LOCALE_OPTIONS, getNextLocale } from '../i18n/core'
+import { useLocale } from '../i18n/useLocale'
 
 export function CameraMark({ size = 20 }: { size?: number }) {
   return (
@@ -85,9 +87,10 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 }
 
 export function BrandLogo({ compact = false }: { compact?: boolean }) {
+  const { messages } = useLocale()
   return (
     <a
-      aria-label="Khoảnh Khắc Live Gallery - Trang chủ"
+      aria-label={messages.brandHomeAria}
       className={compact ? 'brand brand--compact' : 'brand'}
       href="/"
     >
@@ -100,6 +103,49 @@ export function BrandLogo({ compact = false }: { compact?: boolean }) {
   )
 }
 
+export function LanguageSwitch({ compact = false }: { compact?: boolean }) {
+  const { locale, setLocale, messages } = useLocale()
+  const nextCode = getNextLocale(locale)
+  const nextOption = LOCALE_OPTIONS.find((item) => item.code === nextCode) ?? LOCALE_OPTIONS[0]
+  const currentOption = LOCALE_OPTIONS.find((item) => item.code === locale) ?? LOCALE_OPTIONS[0]
+
+  return (
+    <>
+      <div
+        aria-label={messages.languageSwitcherLabel}
+        className={compact ? 'lang-switch lang-switch--compact' : 'lang-switch'}
+        role="group"
+      >
+        {LOCALE_OPTIONS.map((option) => (
+          <button
+            aria-label={option.nativeName}
+            aria-pressed={locale === option.code}
+            className={locale === option.code ? 'lang-switch__btn selected' : 'lang-switch__btn'}
+            key={option.code}
+            lang={option.code}
+            onClick={() => setLocale(option.code)}
+            title={option.nativeName}
+            type="button"
+          >
+            {option.shortLabel}
+          </button>
+        ))}
+      </div>
+      {compact && (
+        <button
+          aria-label={messages.cycleLanguageAria(nextOption.nativeName)}
+          className="lang-cycle"
+          onClick={() => setLocale(nextCode)}
+          title={messages.cycleLanguageAria(nextOption.nativeName)}
+          type="button"
+        >
+          {currentOption.shortLabel}
+        </button>
+      )}
+    </>
+  )
+}
+
 export function ThemeToggleButton({
   theme,
   onToggle,
@@ -109,8 +155,9 @@ export function ThemeToggleButton({
   onToggle: () => void
   compact?: boolean
 }) {
+  const { messages } = useLocale()
   const isLight = theme === 'light'
-  const label = isLight ? 'Chuyển sang phòng tối' : 'Chuyển sang giao diện sáng'
+  const label = isLight ? messages.theme.toDark : messages.theme.toLight
   return (
     <button
       aria-label={label}
@@ -121,7 +168,11 @@ export function ThemeToggleButton({
       type="button"
     >
       <Icon name={isLight ? 'moon' : 'sun'} size={16} />
-      {!compact && <span className="theme-toggle__label">{isLight ? 'Tối' : 'Sáng'}</span>}
+      {!compact && (
+        <span className="theme-toggle__label">
+          {isLight ? messages.theme.darkShort : messages.theme.lightShort}
+        </span>
+      )}
     </button>
   )
 }

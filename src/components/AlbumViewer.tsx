@@ -8,6 +8,8 @@ import {
   useState,
 } from 'react'
 import type { ThemeMode } from '../hooks/useTheme'
+import { localizeErrorMessage } from '../i18n/core'
+import { useLocale } from '../i18n/useLocale'
 import type { ManualSaveState } from '../SavePhotoModal'
 import { formatAlbumDate, padFrame } from '../lib/format'
 import {
@@ -18,7 +20,7 @@ import {
   type SaveMediaOutcome,
 } from '../lib/gallery'
 import { recordRecentAlbum } from '../lib/recentAlbums'
-import { BrandLogo, Icon, ThemeToggleButton, ViewfinderCorners } from './Chrome'
+import { BrandLogo, Icon, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
 
 const loadDecorStudio = () => import('../DecorStudio').then((mod) => ({ default: mod.DecorStudio }))
 const DecorStudio = lazy(loadDecorStudio)
@@ -73,6 +75,7 @@ export function AlbumViewer({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
+  const { locale, messages } = useLocale()
   const [activeIndex, setActiveIndex] = useState(0)
   const [loadedAlbumCode, setLoadedAlbumCode] = useState('')
   const [copied, setCopied] = useState(false)
@@ -159,7 +162,7 @@ export function AlbumViewer({
       return
     }
     if (outcome.status === 'shared') {
-      setNotice('Chọn “Lưu hình ảnh” / “Ảnh” trên menu vừa mở để lưu vào bộ sưu tập Ảnh.')
+      setNotice(messages.viewer.sharedNotice)
     }
   }
 
@@ -174,11 +177,11 @@ export function AlbumViewer({
       try {
         const fresh = await onRefresh()
         const replacement = fresh.items.find((item) => item.id === current.id)
-        if (!replacement) throw new Error('Ảnh không còn trong album.')
+        if (!replacement) throw new Error(messages.viewer.missingPhotoError)
         const outcome = await downloadGalleryMedia(replacement, { bypassCache: true })
         applySaveOutcome(outcome)
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Không thể tải ảnh.')
+        setNotice(error instanceof Error ? localizeErrorMessage(error.message, locale) : messages.viewer.downloadError)
       }
     } finally {
       setDownloading(false)
@@ -188,7 +191,7 @@ export function AlbumViewer({
   const refreshBrokenMedia = () => {
     if (refreshedBrokenMedia.current) return
     refreshedBrokenMedia.current = true
-    void onRefresh().catch(() => setNotice('Không thể làm mới ảnh. Hãy thử tải lại trang.'))
+    void onRefresh().catch(() => setNotice(messages.viewer.refreshError))
   }
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -208,10 +211,11 @@ export function AlbumViewer({
         <header className="gallery__header">
           <BrandLogo compact />
           <div className="gallery__actions">
+            <LanguageSwitch compact />
             <ThemeToggleButton compact onToggle={onToggleTheme} theme={theme} />
             <button className="icon-button" onClick={() => setDecorating(false)} type="button">
               <Icon name="arrow-left" size={17} />
-              <span>Xem album</span>
+              <span>{messages.viewer.backToAlbum}</span>
             </button>
           </div>
         </header>
@@ -225,7 +229,7 @@ export function AlbumViewer({
                   <span />
                   <span />
                 </div>
-                <h1>Đang mở phòng trang trí...</h1>
+                <h1>{messages.viewer.openingDecor}</h1>
               </div>
             )}
           >
@@ -245,9 +249,10 @@ export function AlbumViewer({
         </div>
 
         <div className="gallery__actions">
+          <LanguageSwitch compact />
           <ThemeToggleButton compact onToggle={onToggleTheme} theme={theme} />
           <button
-            aria-label="Trang trí ảnh"
+            aria-label={messages.viewer.decorateAria}
             className="icon-button icon-button--decor"
             onClick={() => setDecorating(true)}
             onFocus={() => void loadDecorStudio()}
@@ -255,27 +260,29 @@ export function AlbumViewer({
             type="button"
           >
             <Icon name="decor" size={17} />
-            <span>Trang trí</span>
+            <span>{messages.viewer.decorateLabel}</span>
           </button>
           <button
-            aria-label={copied ? 'Đã sao chép liên kết album' : 'Chia sẻ liên kết album'}
+            aria-label={copied ? messages.viewer.shareAriaCopied : messages.viewer.shareAria}
             className="icon-button"
             onClick={() => void copyLink()}
             type="button"
           >
             <Icon name={copied ? 'check' : 'copy'} size={17} />
-            <span className="icon-button__text">{copied ? 'Đã chép' : 'Chia sẻ'}</span>
+            <span className="icon-button__text">{copied ? messages.viewer.copiedLabel : messages.viewer.shareLabel}</span>
           </button>
           {current && (
             <button
-              aria-label="Tải ảnh hiện tại"
+              aria-label={messages.viewer.downloadAria}
               className="icon-button icon-button--accent"
               disabled={downloading}
               onClick={() => void downloadCurrent()}
               type="button"
             >
               <Icon name="download" size={17} />
-              <span className="icon-button__text">{downloading ? 'Đang tải...' : 'Tải ảnh'}</span>
+              <span className="icon-button__text">
+                {downloading ? messages.viewer.downloadingLabel : messages.viewer.downloadLabel}
+              </span>
             </button>
           )}
         </div>
@@ -290,12 +297,12 @@ export function AlbumViewer({
             <p className="album-strip__meta">
               <span className="album-strip__code">#{album.shareCode.toUpperCase()}</span>
               <span aria-hidden="true">·</span>
-              <span>{formatAlbumDate(album.createdAt)}</span>
+              <span>{formatAlbumDate(album.createdAt, locale)}</span>
             </p>
           </div>
-          <div className="album-strip__count" aria-label={`Tổng cộng ${album.items.length} khung ảnh`}>
+          <div className="album-strip__count" aria-label={messages.viewer.totalFramesAria(album.items.length)}>
             <strong>{padFrame(album.items.length)}</strong>
-            <span>KHUNG</span>
+            <span>{messages.viewer.framesUnit}</span>
           </div>
         </section>
 
@@ -304,7 +311,7 @@ export function AlbumViewer({
         {current ? (
           <>
             <section
-              aria-label="Trình xem album"
+              aria-label={messages.viewer.viewerAria}
               className="viewer"
               onPointerDown={onPointerDown}
               onPointerUp={onPointerUp}
@@ -315,7 +322,7 @@ export function AlbumViewer({
               <div className="viewer__topbar">
                 <span>
                   {padFrame(activeIndex + 1)} / {padFrame(album.items.length)} ·{' '}
-                  {current.kind === 'gif' ? 'GIF' : 'ẢNH'}
+                  {current.kind === 'gif' ? 'GIF' : messages.viewer.photoKind}
                 </span>
                 <span>
                   {current.width && current.height
@@ -334,7 +341,7 @@ export function AlbumViewer({
               {album.items.length > 1 && (
                 <>
                   <button
-                    aria-label="Ảnh trước"
+                    aria-label={messages.viewer.prevPhotoAria}
                     className="viewer__nav viewer__nav--left"
                     onClick={() => move(-1)}
                     type="button"
@@ -342,7 +349,7 @@ export function AlbumViewer({
                     <Icon name="chevron-left" size={24} />
                   </button>
                   <button
-                    aria-label="Ảnh tiếp theo"
+                    aria-label={messages.viewer.nextPhotoAria}
                     className="viewer__nav viewer__nav--right"
                     onClick={() => move(1)}
                     type="button"
@@ -353,7 +360,7 @@ export function AlbumViewer({
               )}
 
               <button
-                aria-label="Xem toàn màn hình"
+                aria-label={messages.viewer.fullscreenAria}
                 className="viewer__fullscreen"
                 onClick={() => void enterFullscreen()}
                 type="button"
@@ -363,7 +370,7 @@ export function AlbumViewer({
             </section>
 
             <div className="filmstrip-rail">
-              <div className="thumbnail-row" role="list" aria-label="Danh sách khung ảnh 35mm">
+              <div className="thumbnail-row" role="list" aria-label={messages.viewer.thumbnailListAria}>
                 {album.items.map((item, index) => {
                   const isActive = index === activeIndex
                   const isUnthumbnailedGif = item.kind === 'gif' && !item.thumbnailUrl
@@ -371,7 +378,7 @@ export function AlbumViewer({
                   return (
                     <button
                       aria-current={isActive}
-                      aria-label={`Xem khung ảnh ${padFrame(index + 1)}`}
+                      aria-label={messages.viewer.viewFrameAria(padFrame(index + 1))}
                       className="thumbnail"
                       key={item.id}
                       onClick={() => setActiveIndex(index)}
@@ -404,17 +411,17 @@ export function AlbumViewer({
         ) : (
           <div className="empty-album">
             <Icon name="image" size={34} />
-            <h2>Album chưa có ảnh</h2>
-            <p>Ảnh mới sẽ xuất hiện tại đây ngay sau khi máy photobooth tải lên.</p>
+            <h2>{messages.viewer.emptyTitle}</h2>
+            <p>{messages.viewer.emptyDesc}</p>
           </div>
         )}
       </main>
 
       <footer className="gallery__footer">
-        <span>Dùng phím mũi tên hoặc vuốt để chuyển khung ảnh</span>
+        <span>{messages.viewer.footerHint}</span>
         <a href="/">
           <Icon name="arrow-left" size={15} />
-          <span>Mở album khác</span>
+          <span>{messages.viewer.openAnotherAlbum}</span>
         </a>
       </footer>
 
@@ -423,7 +430,7 @@ export function AlbumViewer({
           <SavePhotoModal
             item={manualSave}
             onClose={() => setManualSave(null)}
-            onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+            onShared={() => setNotice(messages.viewer.sharedModalNotice)}
           />
         </Suspense>
       )}

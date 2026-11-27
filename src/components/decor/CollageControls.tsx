@@ -7,6 +7,7 @@ import {
   type CollageItem,
   type CollageSettings,
 } from '../../decor'
+import { useLocale } from '../../i18n/useLocale'
 import type { GalleryBackgroundAsset } from '../../lib/gallery'
 import type { LocalBackground } from '../../lib/localBackgrounds'
 
@@ -39,6 +40,7 @@ export function CollageControls({
   onAddLocalBackground,
   onRemoveLocalBackground,
 }: CollageControlsProps) {
+  const { messages } = useLocale()
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const output = collageSize(collage.format)
 
@@ -47,15 +49,15 @@ export function CollageControls({
       {selectedItem && (
         <div className="decor-sliders decor-sliders--top">
           <div className="decor-sliders__header">
-            <strong>Dải ảnh đang chọn</strong>
+            <strong>{messages.decor.selectedStripTitle}</strong>
             <div className="decor-quick-actions">
               <button
                 onClick={() => onUpdateItem(selectedItem.id, { zIndex: Math.max(0, ...collage.items.map((item) => item.zIndex)) + 1 })}
                 type="button"
               >
-                Lên trước
+                {messages.decor.bringFront}
               </button>
-              <button disabled={collage.items.length >= MAX_COLLAGE_ITEMS} onClick={onAddCopy} type="button">Nhân bản</button>
+              <button disabled={collage.items.length >= MAX_COLLAGE_ITEMS} onClick={onAddCopy} type="button">{messages.decor.duplicate}</button>
               <button onClick={() => onUpdateItem(selectedItem.id, { rotation: 0 })} type="button">0°</button>
               <button
                 className="danger"
@@ -63,12 +65,12 @@ export function CollageControls({
                 onClick={() => onDeleteSelectedItem(selectedItem.id)}
                 type="button"
               >
-                Xóa
+                {messages.decor.delete}
               </button>
             </div>
           </div>
           <label>
-            <span>Kích thước <b>{Math.round(selectedItem.width * 100)}%</b></span>
+            <span>{messages.decor.sizeLabel} <b>{Math.round(selectedItem.width * 100)}%</b></span>
             <input
               max={0.95}
               min={0.12}
@@ -79,7 +81,7 @@ export function CollageControls({
             />
           </label>
           <label>
-            <span>Xoay <b>{selectedItem.rotation}°</b></span>
+            <span>{messages.decor.rotateLabel} <b>{selectedItem.rotation}°</b></span>
             <input
               max={180}
               min={-180}
@@ -92,7 +94,7 @@ export function CollageControls({
       )}
 
       <div className="decor-section-title">
-        <h2>Khổ nền</h2>
+        <h2>{messages.decor.canvasFormatTitle}</h2>
         <span className="decor-mono">{output.width} × {output.height} PX</span>
       </div>
       <div className="decor-format-grid">
@@ -109,9 +111,9 @@ export function CollageControls({
       </div>
 
       <div className="decor-section-title">
-        <h2>Màu & họa tiết</h2>
+        <h2>{messages.decor.colorAndPatternTitle}</h2>
         <input
-          aria-label="Màu nền tùy chỉnh"
+          aria-label={messages.decor.customBgColorAria}
           onChange={(event) => onPatchCollage({ background: event.target.value })}
           type="color"
           value={collage.background}
@@ -120,7 +122,7 @@ export function CollageControls({
       <div className="decor-colors">
         {COLLAGE_COLORS.map((color) => (
           <button
-            aria-label={`Chọn màu nền ${color}`}
+            aria-label={messages.decor.chooseBgColorAria(color)}
             className={collage.background === color ? 'selected' : ''}
             key={color}
             onClick={() => onPatchCollage({ background: color })}
@@ -137,14 +139,14 @@ export function CollageControls({
             onClick={() => onPatchCollage({ pattern })}
             type="button"
           >
-            {pattern === 'solid' ? 'Trơn' : pattern === 'dots' ? 'Chấm' : 'Ô lưới'}
+            {messages.decor.patterns[pattern]}
           </button>
         ))}
       </div>
 
       <div className="decor-section-title">
-        <h2>Nền ảnh</h2>
-        <button onClick={() => backgroundInputRef.current?.click()} type="button">+ Thêm từ máy</button>
+        <h2>{messages.decor.backgroundImageTitle}</h2>
+        <button onClick={() => backgroundInputRef.current?.click()} type="button">{messages.decor.addFromDevice}</button>
       </div>
       <input
         accept="image/png,image/jpeg,image/webp"
@@ -160,7 +162,7 @@ export function CollageControls({
           type="button"
         >
           <span style={{ background: collage.background }} />
-          Chỉ màu
+          {messages.decor.colorOnly}
         </button>
         {remoteBackgrounds.map((item) => (
           <button
@@ -184,7 +186,7 @@ export function CollageControls({
               {item.name}
             </button>
             <button
-              aria-label={`Xóa nền ${item.name}`}
+              aria-label={messages.decor.deleteBgAria(item.name)}
               onClick={() => onRemoveLocalBackground(item)}
               type="button"
             >
@@ -195,35 +197,35 @@ export function CollageControls({
       </div>
 
       <div className="decor-section-title">
-        <h2>Xếp photobooth</h2>
+        <h2>{messages.decor.arrangeTitle}</h2>
         <span className="decor-mono">{collage.items.length}/{MAX_COLLAGE_ITEMS}</span>
       </div>
       <div className="decor-format-grid decor-format-grid--three">
-        <button onClick={onChooseSingle} type="button">Một dải giữa</button>
-        <button onClick={onChooseTwo} type="button">Hai dải chéo</button>
-        <button disabled={collage.items.length >= MAX_COLLAGE_ITEMS} onClick={onAddCopy} type="button">Lặp thêm</button>
+        <button onClick={onChooseSingle} type="button">{messages.decor.singleStrip}</button>
+        <button onClick={onChooseTwo} type="button">{messages.decor.twoStrips}</button>
+        <button disabled={collage.items.length >= MAX_COLLAGE_ITEMS} onClick={onAddCopy} type="button">{messages.decor.addCopy}</button>
       </div>
 
       <div className="decor-message-input">
         <label>
-          Lời nhắn
+          {messages.decor.messageLabel}
           <input
             maxLength={80}
             onChange={(event) => onPatchCollage({ message: event.target.value })}
-            placeholder="Nhập lời nhắn..."
+            placeholder={messages.decor.messagePlaceholder}
             value={collage.message}
           />
         </label>
         <input
-          aria-label="Màu chữ lời nhắn"
+          aria-label={messages.decor.messageColorAria}
           onChange={(event) => onPatchCollage({ messageColor: event.target.value })}
           type="color"
           value={collage.messageColor}
         />
       </div>
 
-      <div aria-label="Vị trí lời nhắn" className="decor-format-grid decor-format-grid--two" role="group">
-        {([['top', 'Phía trên'], ['bottom', 'Phía dưới']] as const).map(([position, label]) => (
+      <div aria-label={messages.decor.messagePositionAria} className="decor-format-grid decor-format-grid--two" role="group">
+        {([['top', messages.decor.positionTop], ['bottom', messages.decor.positionBottom]] as const).map(([position, label]) => (
           <button
             className={(collage.messagePosition ?? 'bottom') === position ? 'selected' : ''}
             key={position}

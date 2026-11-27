@@ -160,11 +160,27 @@
     min-width: 44px;
     padding: 0 11px;
   }
+  .lang-switch__btn {
+    height: 38px;
+    min-width: 34px;
+  }
 }
 
 @media (max-width: 560px) {
   .landing__header {
     min-height: 60px;
+  }
+  .header-tools {
+    gap: 8px;
+  }
+  .theme-toggle__label {
+    display: none;
+  }
+  .lang-switch--compact {
+    display: none;
+  }
+  .lang-cycle {
+    display: inline-flex;
   }
   .theme-toggle--compact {
     height: 44px;

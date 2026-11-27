@@ -5,6 +5,7 @@ import {
   type PlacedSticker,
   type StickerCategory,
 } from '../../decor'
+import { useLocale } from '../../i18n/useLocale'
 
 interface StickerControlsProps {
   stickersCount: number
@@ -35,28 +36,30 @@ export function StickerControls({
   onClearSelection,
   onClearAll,
 }: StickerControlsProps) {
+  const { messages } = useLocale()
+
   return (
     <>
       {selectedSticker && (
         <div className="decor-sliders decor-sliders--top">
           <div className="decor-sliders__header">
-            <strong>Đang chỉnh: {selectedSticker.name}</strong>
+            <strong>{messages.decor.editingSticker(selectedSticker.name)}</strong>
             <div className="decor-quick-actions">
-              <button onClick={() => onUpdateSticker(selectedSticker.placementId, { flipX: !selectedSticker.flipX })} type="button">Lật</button>
-              <button onClick={() => onDuplicateSticker(selectedSticker)} type="button">Nhân bản</button>
+              <button onClick={() => onUpdateSticker(selectedSticker.placementId, { flipX: !selectedSticker.flipX })} type="button">{messages.decor.flip}</button>
+              <button onClick={() => onDuplicateSticker(selectedSticker)} type="button">{messages.decor.duplicate}</button>
               <button onClick={() => onUpdateSticker(selectedSticker.placementId, { rotation: 0 })} type="button">0°</button>
               <button
                 className="danger"
                 onClick={() => onDeleteSticker(selectedSticker.placementId)}
                 type="button"
               >
-                Xóa
+                {messages.decor.delete}
               </button>
-              <button onClick={onClearSelection} type="button">Xong</button>
+              <button onClick={onClearSelection} type="button">{messages.decor.done}</button>
             </div>
           </div>
           <label>
-            <span>Kích thước <b>{Math.round(selectedSticker.size * 100)}%</b></span>
+            <span>{messages.decor.sizeLabel} <b>{Math.round(selectedSticker.size * 100)}%</b></span>
             <input
               max={0.4}
               min={0.05}
@@ -67,7 +70,7 @@ export function StickerControls({
             />
           </label>
           <label>
-            <span>Xoay <b>{selectedSticker.rotation}°</b></span>
+            <span>{messages.decor.rotateLabel} <b>{selectedSticker.rotation}°</b></span>
             <input
               max={180}
               min={-180}
@@ -80,22 +83,24 @@ export function StickerControls({
       )}
 
       <div className="decor-section-title">
-        <h2>Chọn sticker</h2>
+        <h2>{messages.decor.chooseStickerTitle}</h2>
         <div className="decor-section-meta">
-          <span className="decor-mono">{stickersCount}/{MAX_STICKERS} · {hasRemoteStickers ? 'Kho + có sẵn' : 'Có sẵn'}</span>
+          <span className="decor-mono">
+            {stickersCount}/{MAX_STICKERS} · {hasRemoteStickers ? messages.decor.remoteAndBuiltIn : messages.decor.builtInOnly}
+          </span>
           {stickersCount > 0 && (
             <button
               className="decor-clear-button"
               onClick={onClearAll}
               type="button"
             >
-              Xóa tất cả
+              {messages.decor.clearAll}
             </button>
           )}
         </div>
       </div>
 
-      <div aria-label="Danh mục sticker" className="decor-categories" role="tablist">
+      <div aria-label={messages.decor.stickerCategoriesAria} className="decor-categories" role="tablist">
         {STICKER_CATEGORIES.map((category) => (
           <button
             aria-selected={stickerCategory === category.id}
@@ -105,7 +110,7 @@ export function StickerControls({
             role="tab"
             type="button"
           >
-            {category.name}
+            {messages.decor.categories[category.id]}
           </button>
         ))}
       </div>
@@ -113,7 +118,7 @@ export function StickerControls({
       <div className={selectedSticker ? 'decor-sticker-library decor-sticker-library--compact' : 'decor-sticker-library'}>
         {visibleAssets.map((asset) => (
           <button
-            aria-label={`Thêm sticker ${asset.name}`}
+            aria-label={messages.decor.addStickerAria(asset.name)}
             key={asset.id}
             onClick={() => onAddSticker(asset)}
             title={asset.name}
@@ -125,8 +130,8 @@ export function StickerControls({
       </div>
 
       <p className={selectedSticker ? 'decor-help decor-help--selected' : 'decor-help'}>
-        Kéo để di chuyển, dùng 2 ngón tay để phóng to / xoay, hoặc chạm nền để bỏ chọn.
-        <span className="desktop-only"> Trên máy tính: Delete để xóa, Ctrl+C/Ctrl+V để sao chép.</span>
+        {messages.decor.stickerHelpMobile}
+        <span className="desktop-only">{messages.decor.stickerHelpDesktop}</span>
       </p>
     </>
   )

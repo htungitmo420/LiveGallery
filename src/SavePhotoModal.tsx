@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useLocale } from './i18n/useLocale'
 import { shareMediaFileImmediately } from './lib/gallery'
 
 export interface ManualSaveState {
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export function SavePhotoModal({ item, onClose, onShared }: Props) {
+  const { messages } = useLocale()
+
   useEffect(() => {
     if (!item) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -50,11 +53,11 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
       >
         <div className="save-photo-modal__header">
           <div>
-            <p className="save-photo-modal__tag">LƯU VỀ ĐIỆN THOẠI</p>
-            <h2 id="save-photo-title">Lưu vào mục Ảnh</h2>
+            <p className="save-photo-modal__tag">{messages.saveModal.tag}</p>
+            <h2 id="save-photo-title">{messages.saveModal.title}</h2>
           </div>
           <button
-            aria-label="Đóng hộp thoại lưu ảnh"
+            aria-label={messages.saveModal.closeAria}
             className="save-photo-modal__icon-close"
             onClick={onClose}
             type="button"
@@ -76,10 +79,10 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
         </div>
 
         <p className="save-photo-modal__hint">
-          Nhấn giữ trực tiếp vào ảnh (khoảng 2 giây) rồi chọn{' '}
-          <strong>“Lưu vào Ảnh”</strong> (iOS) hoặc{' '}
-          <strong>“Tải hình ảnh”</strong> (Android) để lưu vào ứng dụng{' '}
-          <strong>Ảnh</strong>.
+          {messages.saveModal.hintBeforeIos}{' '}
+          <strong>{messages.saveModal.iosAction}</strong> {messages.saveModal.hintBetween}{' '}
+          <strong>{messages.saveModal.androidAction}</strong> {messages.saveModal.hintAfterAndroid}{' '}
+          <strong>{messages.saveModal.photosApp}</strong>.
         </p>
 
         <div className="save-photo-modal__actions">
@@ -89,7 +92,7 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
               onClick={handleShareClick}
               type="button"
             >
-              Mở menu Lưu vào Ảnh
+              {messages.saveModal.retryShare}
             </button>
           )}
           <button
@@ -97,7 +100,7 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
             onClick={onClose}
             type="button"
           >
-            Đóng
+            {messages.saveModal.close}
           </button>
         </div>
       </div>

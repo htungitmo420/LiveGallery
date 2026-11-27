@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import type { ThemeMode } from '../hooks/useTheme'
+import { useLocale } from '../i18n/useLocale'
 import { padFrame } from '../lib/format'
 import { buildAlbumPath, normalizeShareCode } from '../lib/gallery'
 import {
@@ -7,7 +8,7 @@ import {
   removeRecentAlbumEntry,
   type RecentAlbumEntry,
 } from '../lib/recentAlbums'
-import { BrandLogo, ThemeToggleButton, ViewfinderCorners } from './Chrome'
+import { BrandLogo, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
 
 export function LandingPage({
   theme,
@@ -16,15 +17,16 @@ export function LandingPage({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
+  const { messages } = useLocale()
   const [value, setValue] = useState('')
-  const [message, setMessage] = useState('')
+  const [invalidCode, setInvalidCode] = useState(false)
   const [recentAlbums, setRecentAlbums] = useState<RecentAlbumEntry[]>(readRecentAlbums)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const code = normalizeShareCode(value)
     if (!code) {
-      setMessage('Mã album gồm ít nhất 6 ký tự (chữ cái, số, dấu gạch ngang hoặc gạch dưới).')
+      setInvalidCode(true)
       return
     }
     window.location.assign(buildAlbumPath(code))
@@ -35,22 +37,23 @@ export function LandingPage({
       <header className="landing__header">
         <BrandLogo />
         <div className="header-tools">
-          <span className="header-note">Ảnh riêng tư theo mã chia sẻ</span>
+          <span className="header-note">{messages.landing.privacyNote}</span>
+          <LanguageSwitch />
           <ThemeToggleButton onToggle={onToggleTheme} theme={theme} />
         </div>
       </header>
 
       <main className="hero">
         <div className="hero__copy">
-          <h1>Mở cuộn phim<br />của bạn.</h1>
+          <h1>{messages.landing.heroTitleLine1}<br />{messages.landing.heroTitleLine2}</h1>
           <p className="hero__lead">
-            Nhập mã in trên ảnh photobooth hoặc quét QR tại quầy để xem lại toàn bộ bản chụp, trang trí sticker và lưu ảnh gốc trực tiếp về điện thoại.
+            {messages.landing.heroLead}
           </p>
 
           <form className="claim-stub" onSubmit={submit} noValidate>
             <div className="claim-stub__head">
-              <label htmlFor="album-code">Mã nhận ảnh</label>
-              <span className="claim-stub__spec">6 - 64 KÝ TỰ</span>
+              <label htmlFor="album-code">{messages.landing.claimLabel}</label>
+              <span className="claim-stub__spec">{messages.landing.claimSpec}</span>
             </div>
             <div className="claim-stub__tear" aria-hidden="true" />
             <div className="claim-stub__body">
@@ -62,22 +65,24 @@ export function LandingPage({
                   maxLength={64}
                   onChange={(event) => {
                     setValue(event.target.value)
-                    setMessage('')
+                    setInvalidCode(false)
                   }}
-                  placeholder="Ví dụ: D44092"
+                  placeholder={messages.landing.claimPlaceholder}
                   spellCheck={false}
                   value={value}
                 />
               </div>
-              <button className="claim-stub__submit" type="submit">Mở album</button>
+              <button className="claim-stub__submit" type="submit">{messages.landing.claimSubmit}</button>
             </div>
-            <p aria-live="polite" className="claim-stub__message">{message}</p>
+            <p aria-live="polite" className="claim-stub__message">
+              {invalidCode ? messages.landing.claimInvalid : ''}
+            </p>
           </form>
 
           {recentAlbums.length > 0 && (
             <section aria-labelledby="recent-albums-title" className="recent-albums">
               <div className="recent-albums__head">
-                <h2 id="recent-albums-title">Album vừa mở</h2>
+                <h2 id="recent-albums-title">{messages.landing.recentTitle}</h2>
                 <span>{padFrame(recentAlbums.length)}</span>
               </div>
               <ul className="recent-albums__list">
@@ -88,7 +93,7 @@ export function LandingPage({
                       <span className="recent-albums__name">{entry.title}</span>
                     </a>
                     <button
-                      aria-label={`Xóa album ${entry.title} khỏi danh sách vừa mở`}
+                      aria-label={messages.landing.removeRecentAria(entry.title)}
                       className="recent-albums__remove"
                       onClick={() => setRecentAlbums(removeRecentAlbumEntry(entry.shareCode))}
                       type="button"
@@ -107,8 +112,8 @@ export function LandingPage({
             <ViewfinderCorners />
 
             <div className="darkroom-table__bar">
-              <span>35MM CONTACT SHEET</span>
-              <span>ẢNH · GIF</span>
+              <span>{messages.landing.contactSheetBar}</span>
+              <span>{messages.landing.mediaTag}</span>
             </div>
 
             <div className="darkroom-table__canvas">
@@ -146,8 +151,8 @@ export function LandingPage({
       </main>
 
       <footer className="landing__footer">
-        <span>Khoảnh Khắc Photobooth</span>
-        <span className="footer-mono">35MM ARCHIVAL GALLERY</span>
+        <span>{messages.landing.footerBrand}</span>
+        <span className="footer-mono">{messages.landing.footerMono}</span>
       </footer>
     </div>
   )

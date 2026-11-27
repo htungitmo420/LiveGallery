@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ThemeMode } from '../hooks/useTheme'
-import { BrandLogo, Icon, ThemeToggleButton } from './Chrome'
+import { useLocale } from '../i18n/useLocale'
+import { BrandLogo, Icon, LanguageSwitch, ThemeToggleButton } from './Chrome'
 
 function StatusShell({
   theme,
@@ -15,7 +16,10 @@ function StatusShell({
     <div className="status-shell">
       <header className="landing__header">
         <BrandLogo />
-        <ThemeToggleButton onToggle={onToggleTheme} theme={theme} />
+        <div className="header-tools">
+          <LanguageSwitch />
+          <ThemeToggleButton onToggle={onToggleTheme} theme={theme} />
+        </div>
       </header>
       <main className="status-page">{children}</main>
     </div>
@@ -31,6 +35,7 @@ export function LoadingState({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
+  const { messages } = useLocale()
   return (
     <StatusShell onToggleTheme={onToggleTheme} theme={theme}>
       <div className="status-card">
@@ -41,8 +46,8 @@ export function LoadingState({
           <span />
           <span />
         </div>
-        <h1>Đang mở cuộn phim...</h1>
-        <p>Đang tải bản chụp và tư liệu trang trí từ máy chủ album.</p>
+        <h1>{messages.status.loadingTitle}</h1>
+        <p>{messages.status.loadingDesc}</p>
       </div>
     </StatusShell>
   )
@@ -59,16 +64,17 @@ export function ErrorState({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
+  const { messages } = useLocale()
   return (
     <StatusShell onToggleTheme={onToggleTheme} theme={theme}>
       <div className="status-card">
         <div className="status-card__icon">
           <Icon name="image" size={26} />
         </div>
-        <span className="status-card__code">#{code.toUpperCase()} · KHÔNG THỂ MỞ ALBUM</span>
-        <h1>Album chưa sẵn sàng</h1>
+        <span className="status-card__code">#{code.toUpperCase()} · {messages.status.errorCodeSuffix}</span>
+        <h1>{messages.status.errorTitle}</h1>
         <p>{message}</p>
-        <a className="primary-link" href="/">Nhập mã khác</a>
+        <a className="primary-link" href="/">{messages.status.tryAnotherCode}</a>
       </div>
     </StatusShell>
   )

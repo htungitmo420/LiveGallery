@@ -5,6 +5,7 @@ import {
   type CollageSettings,
   type PlacedSticker,
 } from '../../decor'
+import { useLocale } from '../../i18n/useLocale'
 import { isSafeMediaUrl } from '../../lib/gallery'
 import { StripArtwork } from './StripArtwork'
 import { trackPointerDrag } from './pointerDrag'
@@ -28,6 +29,7 @@ export function CollageStage({
   onSelectItem,
   onUpdateItem,
 }: CollageStageProps) {
+  const { messages } = useLocale()
   const stageRef = useRef<HTMLDivElement>(null)
   const output = collageSize(collage.format)
 
@@ -77,7 +79,7 @@ export function CollageStage({
     >
       {collage.items.slice().sort((a, b) => a.zIndex - b.zIndex).map((item) => (
         <button
-          aria-label="Di chuyển dải ảnh"
+          aria-label={messages.decor.moveStripAria}
           className={selectedItemId === item.id ? 'decor-collage-item selected' : 'decor-collage-item'}
           key={item.id}
           onPointerDown={(event) => startItemMove(event, item)}

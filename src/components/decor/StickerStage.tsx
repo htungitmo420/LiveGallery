@@ -7,6 +7,7 @@ import {
   transformStickerByGesture,
   type PlacedSticker,
 } from '../../decor'
+import { useLocale } from '../../i18n/useLocale'
 import { trackPointerDrag } from './pointerDrag'
 
 interface StickerStageProps {
@@ -34,6 +35,7 @@ export function StickerStage({
   onDuplicateSticker,
   onDeleteSticker,
 }: StickerStageProps) {
+  const { messages } = useLocale()
   const stageRef = useRef<HTMLDivElement>(null)
   const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
   const dragCancelRef = useRef<(() => void) | null>(null)
@@ -172,7 +174,7 @@ export function StickerStage({
       style={{ aspectRatio: baseAspect, ['--stage-aspect' as string]: baseAspect }}
     >
       <img
-        alt="Ảnh photobooth"
+        alt={messages.decor.stripAlt}
         crossOrigin="anonymous"
         draggable={false}
         onLoad={(event) => onBaseAspectLoad(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight)}
@@ -192,7 +194,7 @@ export function StickerStage({
             }}
           >
             <button
-              aria-label={`Di chuyển ${sticker.name}`}
+              aria-label={messages.decor.moveStickerAria(sticker.name)}
               className="decor-sticker"
               onClick={() => onSelectSticker(sticker.placementId)}
               onPointerDown={(event) => startStickerMove(event, sticker)}
@@ -210,7 +212,7 @@ export function StickerStage({
       })}
       {selectedSticker && toolbarPos && (
         <div
-          aria-label={`Công cụ cho sticker ${selectedSticker.name}`}
+          aria-label={messages.decor.stickerToolbarAria(selectedSticker.name)}
           className="decor-sticker-toolbar"
           style={{
             left: `${toolbarPos.left * 100}%`,
@@ -219,42 +221,42 @@ export function StickerStage({
           }}
         >
           <button
-            aria-label={`Giữ và kéo để xoay ${selectedSticker.name}`}
+            aria-label={messages.decor.rotateStickerAria(selectedSticker.name)}
             onPointerDown={(event) => startStickerRotate(event, selectedSticker)}
-            title="Giữ và kéo để xoay"
+            title={messages.decor.rotateStickerTitle}
             type="button"
           >
             ↻
           </button>
           <button
-            aria-label={`Lật ngang ${selectedSticker.name}`}
+            aria-label={messages.decor.flipStickerAria(selectedSticker.name)}
             onClick={() => onUpdateSticker(selectedSticker.placementId, { flipX: !selectedSticker.flipX })}
-            title="Lật ngang sticker"
+            title={messages.decor.flipStickerTitle}
             type="button"
           >
             ↔
           </button>
           <button
-            aria-label={`Nhân bản ${selectedSticker.name}`}
+            aria-label={messages.decor.duplicateStickerAria(selectedSticker.name)}
             onClick={() => onDuplicateSticker(selectedSticker)}
-            title="Nhân bản sticker"
+            title={messages.decor.duplicateStickerTitle}
             type="button"
           >
             ⧉
           </button>
           <button
-            aria-label={`Giữ và kéo để đổi kích thước ${selectedSticker.name}`}
+            aria-label={messages.decor.resizeStickerAria(selectedSticker.name)}
             onPointerDown={(event) => startStickerResize(event, selectedSticker)}
-            title="Giữ và kéo để đổi kích thước"
+            title={messages.decor.resizeStickerTitle}
             type="button"
           >
             ↘
           </button>
           <button
-            aria-label={`Xóa ${selectedSticker.name}`}
+            aria-label={messages.decor.deleteStickerAria(selectedSticker.name)}
             className="delete"
             onClick={() => onDeleteSticker(selectedSticker.placementId)}
-            title="Xóa sticker"
+            title={messages.decor.deleteStickerTitle}
             type="button"
           >
             ×

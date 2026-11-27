@@ -21,6 +21,9 @@ import {
   type StickerCategory,
 } from './decor'
 import { readStoredDecor, writeStoredDecor } from './decor/storage'
+import { localizeErrorMessage } from './i18n/core'
+import { localizeStickerName } from './i18n/stickers'
+import { useLocale } from './i18n/useLocale'
 import type { GalleryAlbum } from './lib/gallery'
 import {
   deleteLocalBackground,
@@ -40,6 +43,7 @@ interface Props {
 }
 
 export function DecorStudio({ album, onClose }: Props) {
+  const { locale, messages } = useLocale()
   const base = album.items.find((item) => item.fileName.startsWith('photobooth.'))
     ?? album.items.find((item) => item.kind === 'image')
   const initial = useMemo(() => readStoredDecor(album.shareCode), [album.shareCode])
@@ -65,8 +69,11 @@ export function DecorStudio({ album, onClose }: Props) {
       kind: 'image' as const,
       content: item.url,
     })),
-    ...FALLBACK_STICKERS,
-  ], [album.stickers])
+    ...FALLBACK_STICKERS.map((item) => ({
+      ...item,
+      name: localizeStickerName(item.id, item.name, locale),
+    })),
+  ], [album.stickers, locale])
 
   const visibleAssets = useMemo(
     () => assets.filter((item) => stickerCategory === 'all' || item.category === stickerCategory),
@@ -105,9 +112,9 @@ export function DecorStudio({ album, onClose }: Props) {
   }, [album.shareCode, collage, stickers])
 
   const duplicateSticker = useCallback(
-    (source: PlacedSticker, noticeMessage = 'Đã nhân bản sticker.') => {
+    (source: PlacedSticker, noticeMessage = messages.decor.duplicatedStickerNotice) => {
       if (stickers.length >= MAX_STICKERS) {
-        setNotice(`Mỗi ảnh dùng tối đa ${MAX_STICKERS} sticker.`)
+        setNotice(messages.decor.maxStickersNotice(MAX_STICKERS))
         return
       }
       const placementId = makeId('sticker')
@@ -116,7 +123,7 @@ export function DecorStudio({ album, onClose }: Props) {
       setSelectedStickerId(placementId)
       setNotice(noticeMessage)
     },
-    [stickers],
+    [messages.decor, stickers],
   )
 
   const deleteSticker = useCallback((id: string) => {
@@ -134,37 +141,37 @@ export function DecorStudio({ album, onClose }: Props) {
       if (shortcut && event.key.toLowerCase() === 'c' && selectedSticker) {
         event.preventDefault()
         stickerClipboardRef.current = { ...selectedSticker }
-        setNotice('Đã sao chép sticker. Nhấn Ctrl+V để dán.')
+        setNotice(messages.decor.copiedStickerNotice)
         return
       }
 
       if (shortcut && event.key.toLowerCase() === 'v' && stickerClipboardRef.current) {
         event.preventDefault()
-        duplicateSticker(stickerClipboardRef.current, 'Đã dán một bản sao sticker.')
+        duplicateSticker(stickerClipboardRef.current, messages.decor.pastedStickerNotice)
         return
       }
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedStickerId) {
         event.preventDefault()
         deleteSticker(selectedStickerId)
-        setNotice('Đã xóa sticker.')
+        setNotice(messages.decor.deletedStickerNotice)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteSticker, duplicateSticker, mode, selectedSticker, selectedStickerId])
+  }, [deleteSticker, duplicateSticker, messages.decor, mode, selectedSticker, selectedStickerId])
 
   if (!base) {
     return (
       <section className="decor-empty">
-        <h2>Chưa có ảnh photobooth để trang trí</h2>
-        <button className="primary-link" onClick={onClose} type="button">Quay lại album</button>
+        <h2>{messages.decor.emptyTitle}</h2>
+        <button className="primary-link" onClick={onClose} type="button">{messages.decor.backToAlbum}</button>
       </section>
     )
   }
 
   const addSticker = (asset: DecorStickerAsset) => {
-    if (stickers.length >= MAX_STICKERS) return setNotice(`Mỗi ảnh dùng tối đa ${MAX_STICKERS} sticker.`)
+    if (stickers.length >= MAX_STICKERS) return setNotice(messages.decor.maxStickersNotice(MAX_STICKERS))
     const next: PlacedSticker = {
       ...asset,
       placementId: makeId('sticker'),
@@ -237,9 +244,9 @@ export function DecorStudio({ album, onClose }: Props) {
       const item = await saveLocalBackground(file)
       setLocalBackgrounds((current) => [item, ...current])
       setCollage((current) => ({ ...current, backgroundImageUrl: item.url }))
-      setNotice('Đã lưu nền trên thiết bị này.')
+      setNotice(messages.decor.savedLocalBgNotice)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Không thể thêm nền.')
+      setNotice(error instanceof Error ? localizeErrorMessage(error.message, locale) : messages.decor.addBgError)
     }
   }
 
@@ -252,7 +259,7 @@ export function DecorStudio({ album, onClose }: Props) {
 
   const exportDecor = async () => {
     setBusy(true)
-    setNotice('Đang tạo ảnh chất lượng cao...')
+    setNotice(messages.decor.creatingHighResNotice)
     try {
       const canvas = mode === 'background'
         ? await renderCollage(base.url, stickers, collage)
@@ -264,16 +271,16 @@ export function DecorStudio({ album, onClose }: Props) {
           previewUrl: outcome.previewUrl,
           canRetryShare: outcome.canRetryShare,
         })
-        setNotice('Nhấn giữ ảnh hoặc bấm nút trên hộp thoại để lưu vào mục Ảnh.')
+        setNotice(messages.decor.manualSaveNotice)
       } else if (outcome.status === 'shared') {
-        setNotice('Chọn “Lưu hình ảnh” / “Ảnh” trên menu vừa mở để lưu vào bộ sưu tập Ảnh.')
+        setNotice(messages.decor.sharedNotice)
       } else if (outcome.status === 'cancelled') {
         setNotice('')
       } else {
-        setNotice('Ảnh đã được tải xuống.')
+        setNotice(messages.decor.downloadedNotice)
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Không thể tạo ảnh.')
+      setNotice(error instanceof Error ? localizeErrorMessage(error.message, locale) : messages.decor.exportError)
     } finally {
       setBusy(false)
     }
@@ -284,22 +291,29 @@ export function DecorStudio({ album, onClose }: Props) {
       <div className="decor-studio__bar">
         <div className="decor-studio__title">
           <p className="decor-studio__code">#{album.shareCode.toUpperCase()} · {album.title}</p>
-          <h1>Trang trí bản in</h1>
+          <h1>{messages.decor.studioTitle}</h1>
         </div>
         <div className="decor-studio__actions">
-          <button onClick={onClose} type="button">Quay lại</button>
+          <button onClick={onClose} type="button">{messages.decor.back}</button>
           <button
             className="accent"
             disabled={busy}
             onClick={() => void exportDecor()}
             type="button"
           >
-            {busy ? 'Đang tạo...' : <>Lưu ảnh<span className="desktop-only"> hoàn chỉnh</span></>}
+            {busy ? messages.decor.creating : (
+              <>
+                {messages.decor.savePhotoPrefix}
+                {messages.decor.savePhotoDesktopSuffix && (
+                  <span className="desktop-only">{messages.decor.savePhotoDesktopSuffix}</span>
+                )}
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      <div className="decor-tabs" role="tablist" aria-label="Chế độ trang trí">
+      <div className="decor-tabs" role="tablist" aria-label={messages.decor.modeTablistAria}>
         <button
           aria-selected={mode === 'stickers'}
           className={mode === 'stickers' ? 'selected' : ''}
@@ -307,7 +321,7 @@ export function DecorStudio({ album, onClose }: Props) {
           role="tab"
           type="button"
         >
-          Sticker ({stickers.length})
+          {messages.decor.stickersTab(stickers.length)}
         </button>
         <button
           aria-selected={mode === 'background'}
@@ -316,7 +330,7 @@ export function DecorStudio({ album, onClose }: Props) {
           role="tab"
           type="button"
         >
-          Nền ghép ({collage.items.length})
+          {messages.decor.backgroundTab(collage.items.length)}
         </button>
       </div>
 
@@ -392,7 +406,7 @@ export function DecorStudio({ album, onClose }: Props) {
       <SavePhotoModal
         item={manualSave}
         onClose={() => setManualSave(null)}
-        onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+        onShared={() => setNotice(messages.viewer.sharedModalNotice)}
       />
     </section>
   )
