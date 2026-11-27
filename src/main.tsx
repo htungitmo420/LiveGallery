@@ -1,7 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Analytics } from '@vercel/analytics/react'
 import './index.css'
 import App from './App'
+import { redactAnalyticsEvent } from './lib/analytics'
 import { getShareCodeFromPath, prefetchAlbum } from './lib/gallery'
 
 // Activate preloaded Google Fonts stylesheet without render-blocking initial paint or violating CSP.
@@ -19,5 +21,6 @@ if (initialShareCode) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <Analytics beforeSend={redactAnalyticsEvent} />
   </StrictMode>,
 )

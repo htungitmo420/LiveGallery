@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import indexHtmlRaw from '../index.html?raw'
 import vercelJsonRaw from '../vercel.json?raw'
+import { redactAnalyticsEvent } from '../src/lib/analytics.ts'
 import {
   DEFAULT_R2_MAX_STORAGE_BYTES,
   EMPTY_SHA256_HEX,
@@ -587,12 +588,33 @@ describe('Vercel deployment & CSP configuration integrity', () => {
 
     const csp = headerMap.get('Content-Security-Policy') ?? ''
     expect(csp).toContain(`'${expectedHash}'`)
+    expect(csp).toContain('https://va.vercel-scripts.com')
+    expect(csp).toContain('https://vitals.vercel-insights.com')
     expect(csp).toContain('https://*.supabase.co')
     expect(csp).toContain('https://*.r2.cloudflarestorage.com')
     expect(csp).toContain('https://fonts.googleapis.com')
     expect(csp).toContain('https://fonts.gstatic.com')
     expect(csp).toContain("frame-ancestors 'none'")
     expect(csp).toContain("object-src 'none'")
+
+    expect(
+      redactAnalyticsEvent({
+        type: 'pageview',
+        url: 'https://livegallery-itmo.vercel.app/i/a1b2c3d4e5f6?from=qr#top',
+      }),
+    ).toEqual({
+      type: 'pageview',
+      url: 'https://livegallery-itmo.vercel.app/i/[album]',
+    })
+    expect(
+      redactAnalyticsEvent({
+        type: 'pageview',
+        url: 'https://livegallery-itmo.vercel.app/create',
+      }),
+    ).toEqual({
+      type: 'pageview',
+      url: 'https://livegallery-itmo.vercel.app/create',
+    })
 
     const assetRule = vercelConfig.headers.find((entry) => entry.source === '/assets/(.*)')
     expect(assetRule?.headers).toContainEqual({
