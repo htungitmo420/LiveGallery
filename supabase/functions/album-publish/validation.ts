@@ -15,6 +15,8 @@ export const PRESIGNED_PUT_TTL_SECONDS = 300
 export const UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000
 // High-throughput event ceiling for 150+ continuous guests sharing one venue Wi-Fi IP.
 export const UPLOAD_LIMIT_PER_HOUR = 300
+// Global hourly circuit breaker across all clients combined to bound DB/R2 abuse even under IP rotation.
+export const DEFAULT_GLOBAL_UPLOAD_LIMIT_PER_HOUR = 1200
 
 export const EXPECTED_PHOTO_COUNTS: Record<string, number[]> = {
   strip3: [3, 6],

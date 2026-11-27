@@ -115,7 +115,8 @@ export async function deriveSigningKey(
   region: string,
   service: string,
 ): Promise<Uint8Array> {
-  const cacheKey = `${dateStamp}|${region}|${service}|${secretAccessKey}`
+  const secretFingerprint = await sha256Hex(secretAccessKey)
+  const cacheKey = `${dateStamp}|${region}|${service}|${secretFingerprint}`
   const cached = signingKeyCache.get(cacheKey)
   if (cached) return cached
 
@@ -273,8 +274,13 @@ export async function createR2PresignedPutUrl(options: PresignPutOptions): Promi
   const host = `${config.accountId}.r2.cloudflarestorage.com`
   const canonicalUri = `/${encodeRfc3986(config.bucketName)}/${encodedKey}`
 
-  // Sign only content-type and host so browser fetch(putUrl, { method: 'PUT', headers: { 'Content-Type': ... }, body })
-  // never fails due to browser-managed Content-Length. Exact size is verified via headR2Object during complete.
+  // Sign content-type, host, and exact content-length (when provided) so R2 rejects
+  // oversized or tampered PUT payloads at the edge before storing bytes.
+  const signedHeaders: Record<string, string> = {
+    'content-type': normalizedContentType,
+    ...(options.contentLength !== undefined ? { 'content-length': String(options.contentLength) } : {}),
+  }
+
   const signed = await buildSigV4PresignedUrl({
     method: 'PUT',
     host,
@@ -284,9 +290,7 @@ export async function createR2PresignedPutUrl(options: PresignPutOptions): Promi
     accessKeyId: config.accessKeyId,
     secretAccessKey: config.secretAccessKey,
     expiresInSeconds,
-    signedHeaders: {
-      'content-type': normalizedContentType,
-    },
+    signedHeaders,
     now: options.now,
   })
 

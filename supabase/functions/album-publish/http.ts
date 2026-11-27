@@ -1,8 +1,10 @@
 import {
   DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN,
   deleteR2Object,
+  extractClientIp,
   hmacSha256Hex,
   isAllowedOrigin,
+  isLocalhostEnabled,
   parseAllowedOrigins,
   runWithConcurrency,
 } from '../_shared/r2.ts'
@@ -13,13 +15,15 @@ import {
   type SupabaseRestConfig,
 } from '../_shared/supabase-rest.ts'
 import {
+  DEFAULT_GLOBAL_UPLOAD_LIMIT_PER_HOUR,
   R2_PARALLEL_CONCURRENCY,
   R2_QUOTA_EXCEEDED_ERROR,
   R2_QUOTA_LOOKUP_ERROR,
   UPLOAD_LIMIT_PER_HOUR,
 } from './validation.ts'
 
-const DEFAULT_GALLERY_BASE_URL = 'https://livegallery.nhtisitmo.workers.dev'
+const DEFAULT_GALLERY_BASE_URL = DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN
+const UNSIGNED_INT_PATTERN = /^\d+$/
 export const textEncoder = new TextEncoder()
 
 export interface BeginUploadRow {
@@ -38,9 +42,10 @@ export interface PublishContext {
   startedAt: number
   origin: string | null
   allowedOrigins: readonly string[]
+  allowLocalhost: boolean
   galleryBaseUrl: string
   dbConfig: SupabaseRestConfig
-  serviceRoleKey: string
+  signingSecret: string
 }
 
 export function resolveGalleryBaseUrl(): string {
@@ -65,9 +70,27 @@ export function getAllowedOrigins(): string[] {
   return parseAllowedOrigins(Deno.env.get('ALLOWED_PHOTOBOOTH_ORIGINS'), DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN)
 }
 
-export function corsHeadersFor(origin: string | null, allowedOrigins: readonly string[]) {
+export function getAllowLocalhost(): boolean {
+  return isLocalhostEnabled(Deno.env.get('ALLOW_LOCALHOST_ORIGINS'))
+}
+
+export function resolveGlobalUploadLimit(): number {
+  const raw = Deno.env.get('GLOBAL_UPLOAD_LIMIT_PER_HOUR')?.trim() ?? ''
+  if (!raw || !UNSIGNED_INT_PATTERN.test(raw)) return DEFAULT_GLOBAL_UPLOAD_LIMIT_PER_HOUR
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return DEFAULT_GLOBAL_UPLOAD_LIMIT_PER_HOUR
+  return parsed
+}
+
+export function corsHeadersFor(
+  origin: string | null,
+  allowedOrigins: readonly string[],
+  allowLocalhost = false,
+) {
   return {
-    'Access-Control-Allow-Origin': isAllowedOrigin(origin, allowedOrigins) ? origin! : allowedOrigins[0],
+    'Access-Control-Allow-Origin': isAllowedOrigin(origin, allowedOrigins, { allowLocalhost })
+      ? origin!
+      : allowedOrigins[0],
     'Access-Control-Allow-Headers': 'apikey, content-type, x-client-info, x-photobooth-client',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
@@ -83,11 +106,12 @@ export function jsonResponse(
   origin: string | null,
   allowedOrigins: readonly string[],
   extraHeaders?: Record<string, string>,
+  allowLocalhost = false,
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...corsHeadersFor(origin, allowedOrigins),
+      ...corsHeadersFor(origin, allowedOrigins, allowLocalhost),
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
       ...(extraHeaders ?? {}),
@@ -101,14 +125,11 @@ export function ctxJson(
   status: number,
   extraHeaders?: Record<string, string>,
 ): Response {
-  return jsonResponse(body, status, ctx.origin, ctx.allowedOrigins, extraHeaders)
+  return jsonResponse(body, status, ctx.origin, ctx.allowedOrigins, extraHeaders, ctx.allowLocalhost)
 }
 
 export async function hashClient(request: Request, secret: string): Promise<string> {
-  const address = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || 'unknown'
+  const address = extractClientIp(request.headers)
   return hmacSha256Hex(textEncoder.encode(secret), `khoanhkhac:client-ip:v1:${address}`)
 }
 
@@ -150,6 +171,7 @@ export async function beginAlbumUpload(
     p_expires_at: expiresAt,
     p_incoming_bytes: params.totalBytes,
     p_max_r2_bytes: params.maxR2Bytes,
+    p_global_upload_limit: resolveGlobalUploadLimit(),
   })
   const durationMs = performance.now() - dbStart
 

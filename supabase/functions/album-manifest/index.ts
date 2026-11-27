@@ -1,9 +1,13 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import {
+  DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN,
   createR2PresignedGetUrl,
+  isAllowedOrigin,
+  isLocalhostEnabled,
   isR2Configured,
   isR2StoragePath,
   isSafeAlbumR2Path,
+  parseAllowedOrigins,
   stripR2Prefix,
 } from '../_shared/r2.ts'
 import {
@@ -13,13 +17,31 @@ import {
   type SupabaseRestConfig,
 } from '../_shared/supabase-rest.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-  'Access-Control-Expose-Headers': 'Server-Timing',
-  'X-Content-Type-Options': 'nosniff',
+function getAllowedGalleryOrigins(): string[] {
+  const explicit = Deno.env.get('ALLOWED_GALLERY_ORIGINS')
+  if (explicit?.trim()) {
+    return parseAllowedOrigins(explicit, DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN)
+  }
+  const liveGalleryUrl = Deno.env.get('LIVE_GALLERY_URL')
+  return parseAllowedOrigins(liveGalleryUrl, DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN)
+}
+
+function corsHeadersFor(
+  origin: string | null,
+  allowedOrigins: readonly string[],
+  allowLocalhost: boolean,
+) {
+  return {
+    'Access-Control-Allow-Origin': isAllowedOrigin(origin, allowedOrigins, { allowLocalhost })
+      ? origin!
+      : allowedOrigins[0],
+    'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    'Access-Control-Expose-Headers': 'Server-Timing',
+    'Vary': 'Origin',
+    'X-Content-Type-Options': 'nosniff',
+  }
 }
 
 const codePattern = /^[a-z0-9_-]{6,64}$/i
@@ -199,6 +221,7 @@ async function getDecorCatalog(config: SupabaseRestConfig): Promise<DecorCatalog
 }
 
 function json(
+  corsHeaders: Record<string, string>,
   body: unknown,
   status = 200,
   extraHeaders?: Record<string, string>,
@@ -216,13 +239,17 @@ function json(
 
 Deno.serve(async (request: Request) => {
   const startedAt = performance.now()
+  const origin = request.headers.get('origin')
+  const allowedOrigins = getAllowedGalleryOrigins()
+  const allowLocalhost = isLocalhostEnabled(Deno.env.get('ALLOW_LOCALHOST_ORIGINS'))
+  const corsHeaders = corsHeadersFor(origin, allowedOrigins, allowLocalhost)
 
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   if (request.method !== 'GET') {
-    return json({ error: 'Phương thức không được hỗ trợ.' }, 405)
+    return json(corsHeaders, { error: 'Phương thức không được hỗ trợ.' }, 405)
   }
 
   const requestUrl = new URL(request.url)
@@ -231,7 +258,7 @@ Deno.serve(async (request: Request) => {
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('Missing Supabase server credentials')
-    return json({ error: 'Máy chủ album chưa được cấu hình.' }, 500)
+    return json(corsHeaders, { error: 'Máy chủ album chưa được cấu hình.' }, 500)
   }
 
   const dbConfig: SupabaseRestConfig = { url: supabaseUrl, serviceRoleKey }
@@ -245,6 +272,7 @@ Deno.serve(async (request: Request) => {
     const dbDuration = performance.now() - dbStart
     const totalDuration = performance.now() - startedAt
     return json(
+      corsHeaders,
       { frames, decor },
       200,
       {
@@ -256,7 +284,7 @@ Deno.serve(async (request: Request) => {
 
   const code = requestUrl.searchParams.get('code')?.trim().toLowerCase()
   if (!code || !codePattern.test(code)) {
-    return json({ error: 'Mã album không hợp lệ.' }, 400)
+    return json(corsHeaders, { error: 'Mã album không hợp lệ.' }, 400)
   }
 
   const dbStart = performance.now()
@@ -277,12 +305,12 @@ Deno.serve(async (request: Request) => {
 
   if (albumResult.error) {
     console.error('Album lookup failed')
-    return json({ error: 'Không thể tải album lúc này.' }, 500)
+    return json(corsHeaders, { error: 'Không thể tải album lúc này.' }, 500)
   }
 
   const album = albumResult.data?.[0]
   if (!album || (album.expires_at && Date.parse(album.expires_at) <= Date.now())) {
-    return json({ error: 'Album không tồn tại hoặc đã hết hạn.' }, 404)
+    return json(corsHeaders, { error: 'Album không tồn tại hoặc đã hết hạn.' }, 404)
   }
 
   const assets = (album.photobooth_album_assets ?? [])
@@ -323,7 +351,7 @@ Deno.serve(async (request: Request) => {
     const signedFailure = signedFiles.find((file) => file.failed || !file.signedUrl)
     if (signedFailure) {
       console.error('Signed URL creation failed')
-      return json({ error: 'Không thể mở tệp trong album.' }, 500)
+      return json(corsHeaders, { error: 'Không thể mở tệp trong album.' }, 500)
     }
     for (const file of signedFiles) {
       if (file.signedUrl) signedUrlByPath.set(file.path, file.signedUrl)
@@ -333,6 +361,7 @@ Deno.serve(async (request: Request) => {
   const totalDuration = performance.now() - startedAt
 
   return json(
+    corsHeaders,
     {
       album: {
         shareCode: album.share_code,

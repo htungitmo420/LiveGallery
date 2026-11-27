@@ -9,7 +9,7 @@ const MAX_KEY_LENGTH = 512
 const ACCOUNT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/i
 const BUCKET_NAME_PATTERN = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const ALBUM_FILENAME_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|gif)$/i
+const ALBUM_FILENAME_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|gif|mp4|webm|mov)$/i
 export const UNSIGNED_INT_PATTERN = /^\d+$/
 
 export type EnvGetter = (name: string) => string | undefined

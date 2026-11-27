@@ -11,9 +11,11 @@ import {
   createUploadToken,
   deleteR2Object,
   encodeS3Key,
+  extractClientIp,
   hasR2StorageCapacity,
   headR2Object,
   isAllowedOrigin,
+  isLocalhostEnabled,
   isR2Configured,
   isR2StoragePath,
   isSafeAlbumR2Path,
@@ -106,7 +108,7 @@ describe('AWS SigV4 signing & Cloudflare R2 presigned URLs', () => {
     )
   })
 
-  it('generates browser-compatible R2 presigned PUT URLs signing content-type and host only', async () => {
+  it('generates R2 presigned PUT URLs signing exact content-length, content-type, and host', async () => {
     const url = await createR2PresignedPutUrl({
       key: `${TEST_ALBUM_ID}/${TEST_FILE_1}.jpg`,
       contentType: 'image/jpeg; charset=binary',
@@ -125,9 +127,18 @@ describe('AWS SigV4 signing & Cloudflare R2 presigned URLs', () => {
     )
     expect(parsed.searchParams.get('X-Amz-Date')).toBe('20261126T120000Z')
     expect(parsed.searchParams.get('X-Amz-Expires')).toBe('300')
-    expect(parsed.searchParams.get('X-Amz-SignedHeaders')).toBe('content-type;host')
+    expect(parsed.searchParams.get('X-Amz-SignedHeaders')).toBe('content-length;content-type;host')
     expect(parsed.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/)
     expect(url).not.toContain(TEST_R2_CONFIG.secretAccessKey)
+
+    const unsizedUrl = await createR2PresignedPutUrl({
+      key: `${TEST_ALBUM_ID}/${TEST_FILE_1}.mp4`,
+      contentType: 'video/mp4',
+      expiresInSeconds: 300,
+      now: new Date('2026-11-26T12:00:00.000Z'),
+      config: TEST_R2_CONFIG,
+    })
+    expect(new URL(unsizedUrl).searchParams.get('X-Amz-SignedHeaders')).toBe('content-type;host')
   })
 
   it('generates R2 presigned GET URLs with 1-hour default TTL, optional response-cache-control, and rejects unsafe keys', async () => {
@@ -198,7 +209,11 @@ describe('R2 configuration & storage path security checks', () => {
     expect(encodeS3Key('album-1/file name!.jpg')).toBe('album-1/file%20name%21.jpg')
 
     expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(true)
+    expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.mp4`, TEST_ALBUM_ID)).toBe(true)
+    expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.webm`, TEST_ALBUM_ID)).toBe(true)
+    expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.mov`, TEST_ALBUM_ID)).toBe(true)
     expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.svg`, TEST_ALBUM_ID)).toBe(false)
+    expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/${TEST_FILE_1}.html`, TEST_ALBUM_ID)).toBe(false)
     expect(isSafeAlbumR2Path(`r2:11111111-1111-1111-1111-111111111111/${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
     expect(isSafeAlbumR2Path(`r2:${TEST_ALBUM_ID}/../${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
     expect(isSafeAlbumR2Path(`${TEST_ALBUM_ID}/${TEST_FILE_1}.jpg`, TEST_ALBUM_ID)).toBe(false)
@@ -443,14 +458,50 @@ describe('CORS origin validation & bounded parallel concurrency', () => {
 
     expect(isAllowedOrigin('https://photobooth-itmo.vercel.app', allowed)).toBe(true)
     expect(isAllowedOrigin('https://booth.example.com', allowed)).toBe(true)
-    expect(isAllowedOrigin('http://localhost:5173', allowed)).toBe(true)
-    expect(isAllowedOrigin('http://127.0.0.1:4174', allowed)).toBe(true)
+    // Localhost is blocked by default in production unless explicitly opted in.
+    expect(isAllowedOrigin('http://localhost:5173', allowed)).toBe(false)
+    expect(isAllowedOrigin('http://127.0.0.1:4174', allowed)).toBe(false)
+    expect(isAllowedOrigin('http://localhost:5173', allowed, { allowLocalhost: true })).toBe(true)
+    expect(isAllowedOrigin('http://127.0.0.1:4174', allowed, { allowLocalhost: true })).toBe(true)
+    expect(isLocalhostEnabled('true')).toBe(true)
+    expect(isLocalhostEnabled('false')).toBe(false)
+    expect(isLocalhostEnabled(undefined)).toBe(false)
 
     expect(isAllowedOrigin(null, allowed)).toBe(false)
     expect(isAllowedOrigin('https://photobooth-itmo.vercel.app.evil.com', allowed)).toBe(false)
     expect(isAllowedOrigin('https://sub.photobooth-itmo.vercel.app', allowed)).toBe(false)
     expect(isAllowedOrigin('https://photobooth-itmo.vercel.app/extra', allowed)).toBe(false)
     expect(isAllowedOrigin('http://photobooth-itmo.vercel.app', allowed)).toBe(false)
+  })
+
+  it('extracts client IP safely without trusting spoofed leftmost X-Forwarded-For or unverified cf-connecting-ip', () => {
+    expect(
+      extractClientIp(new Headers({
+        'cf-ray': '8f1a2b3c4d5e6f70-SIN',
+        'cf-connecting-ip': '203.0.113.42',
+        'x-forwarded-for': '1.2.3.4, 203.0.113.42',
+      })),
+    ).toBe('203.0.113.42')
+
+    // Without cf-ray, spoofed cf-connecting-ip is ignored in favor of x-real-ip / rightmost x-forwarded-for
+    expect(
+      extractClientIp(new Headers({
+        'cf-connecting-ip': '9.9.9.9',
+        'x-real-ip': '198.51.100.7',
+      })),
+    ).toBe('198.51.100.7')
+
+    expect(
+      extractClientIp(new Headers({
+        'x-forwarded-for': '1.2.3.4, not-an-ip, 198.51.100.25',
+      })),
+    ).toBe('198.51.100.25')
+
+    expect(
+      extractClientIp(new Headers({
+        'x-forwarded-for': '999.999.999.999',
+      })),
+    ).toBe('unknown')
   })
 
   it('runs tasks in parallel with bounded concurrency and preserves result order', async () => {
@@ -525,8 +576,14 @@ describe('Vercel deployment & CSP configuration integrity', () => {
     expect(headerMap.get('Strict-Transport-Security')).toContain('max-age=31536000')
     expect(headerMap.get('X-Content-Type-Options')).toBe('nosniff')
     expect(headerMap.get('X-Frame-Options')).toBe('DENY')
-    expect(headerMap.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
+    expect(headerMap.get('Referrer-Policy')).toBe('no-referrer')
     expect(headerMap.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()')
+
+    const albumRule = vercelConfig.headers.find((entry) => entry.source === '/i/(.*)')
+    expect(albumRule?.headers).toContainEqual({
+      key: 'X-Robots-Tag',
+      value: 'noindex, nofollow, noarchive',
+    })
 
     const csp = headerMap.get('Content-Security-Policy') ?? ''
     expect(csp).toContain(`'${expectedHash}'`)

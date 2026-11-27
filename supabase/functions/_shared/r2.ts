@@ -53,7 +53,10 @@ export {
 
 export {
   DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN,
+  extractClientIp,
   isAllowedOrigin,
+  isLocalhostEnabled,
   parseAllowedOrigins,
   runWithConcurrency,
+  type OriginCheckOptions,
 } from './http-utils.ts'

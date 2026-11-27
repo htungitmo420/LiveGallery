@@ -74,7 +74,7 @@ async function handleJsonInit(
     return ctxJson(ctx, { error: validation.error }, validation.status)
   }
 
-  const clientHash = await hashClient(request, ctx.serviceRoleKey)
+  const clientHash = await hashClient(request, ctx.signingSecret)
   const begun = await beginAlbumUpload(ctx, {
     clientHash,
     title,
@@ -128,7 +128,7 @@ async function handleJsonInit(
         albumId,
         shareCode,
         files: manifestFiles,
-        secret: ctx.serviceRoleKey,
+        secret: ctx.signingSecret,
         ttlMs: UPLOAD_TOKEN_TTL_MS,
       }),
     ])
@@ -190,7 +190,7 @@ async function handleJsonComplete(
     albumId: album.id,
     shareCode: album.share_code,
     files: submittedFiles,
-    secret: ctx.serviceRoleKey,
+    secret: ctx.signingSecret,
   })
   if (!tokenValid) {
     return ctxJson(ctx, { error: 'Phiên tải album không hợp lệ hoặc đã hết hạn.' }, 403)
@@ -313,7 +313,7 @@ async function handleJsonAbort(
     token: uploadToken,
     albumId: album.id,
     shareCode: album.share_code,
-    secret: ctx.serviceRoleKey,
+    secret: ctx.signingSecret,
   })
   if (!tokenValid) {
     return ctxJson(ctx, { error: 'Phiên hủy tải album không hợp lệ.' }, 403)
@@ -393,7 +393,7 @@ export async function handleMultipartPublish(
   try {
     ;[form, clientHash] = await Promise.all([
       request.formData(),
-      hashClient(request, ctx.serviceRoleKey),
+      hashClient(request, ctx.signingSecret),
     ])
   } catch {
     return ctxJson(ctx, { error: 'Dữ liệu tải lên không hợp lệ.' }, 400)

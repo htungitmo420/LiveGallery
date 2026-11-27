@@ -104,9 +104,9 @@ describe('album-publish payload validation', () => {
 
   it('validates complete payloads, sorts by index, and blocks cross-album storage paths', () => {
     const valid = validateCompleteFiles(ALBUM_ID, [
-      { index: 2, role: 'photo', name: 'anh-01.jpg', mimeType: 'image/jpeg', storagePath: `r2:${ALBUM_ID}/${FILE_3}.jpg` },
+      { index: 2, role: 'photo', name: 'photo-01.jpg', mimeType: 'image/jpeg', storagePath: `r2:${ALBUM_ID}/${FILE_3}.jpg` },
       { index: 0, role: 'strip', name: 'photobooth.jpg', mimeType: 'image/jpeg', storagePath: `r2:${ALBUM_ID}/${FILE_1}.jpg` },
-      { index: 1, role: 'gif', name: 'khoanh-khac.gif', mimeType: 'image/gif', storagePath: `r2:${ALBUM_ID}/${FILE_2}.gif` },
+      { index: 1, role: 'video', name: 'moving-strip.mp4', mimeType: 'video/mp4', storagePath: `r2:${ALBUM_ID}/${FILE_2}.mp4` },
     ])
     expect(valid.ok).toBe(true)
     if (valid.ok) {

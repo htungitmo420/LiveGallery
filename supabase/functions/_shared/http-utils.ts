@@ -1,5 +1,58 @@
 export const DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN = 'https://photobooth-itmo.vercel.app'
 
+const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
+const IPV6_PATTERN = /^[0-9a-f:]{2,45}$/i
+
+export interface OriginCheckOptions {
+  allowLocalhost?: boolean
+}
+
+export function isLocalhostEnabled(rawValue: string | undefined): boolean {
+  return rawValue?.trim().toLowerCase() === 'true'
+}
+
+function normalizeIpCandidate(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/^\[|\]$/g, '')
+  if (!trimmed || trimmed.length > 64) return null
+  if (IPV4_PATTERN.test(trimmed)) {
+    const octets = trimmed.split('.').map(Number)
+    return octets.every((n) => n >= 0 && n <= 255) ? trimmed : null
+  }
+  if (trimmed.includes(':') && IPV6_PATTERN.test(trimmed)) {
+    return trimmed.toLowerCase()
+  }
+  return null
+}
+
+/**
+ * Extracts the client IP from proxy headers without trusting spoofable leftmost
+ * X-Forwarded-For entries. On Supabase Edge Functions (Cloudflare -> Kong -> Deno),
+ * cf-connecting-ip is overwritten by Cloudflare; when falling back to X-Forwarded-For,
+ * take the rightmost valid proxy-appended IP rather than the client-controlled leftmost value.
+ */
+export function extractClientIp(headers: Headers): string {
+  const cfRay = headers.get('cf-ray')?.trim()
+  if (cfRay) {
+    const cfIp = normalizeIpCandidate(headers.get('cf-connecting-ip'))
+    if (cfIp) return cfIp
+  }
+
+  const realIp = normalizeIpCandidate(headers.get('x-real-ip'))
+  if (realIp) return realIp
+
+  const forwarded = headers.get('x-forwarded-for')
+  if (forwarded) {
+    const parts = forwarded.split(',')
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      const candidate = normalizeIpCandidate(parts[index])
+      if (candidate) return candidate
+    }
+  }
+
+  return 'unknown'
+}
+
 export function parseAllowedOrigins(
   rawValue: string | undefined,
   fallbackOrigin: string = DEFAULT_ALLOWED_PHOTOBOOTH_ORIGIN,
@@ -35,14 +88,18 @@ export function parseAllowedOrigins(
 export function isAllowedOrigin(
   origin: string | null,
   allowedOrigins: readonly string[],
+  options?: OriginCheckOptions,
 ): boolean {
   if (!origin) return false
   try {
     const parsed = new URL(origin)
     if (parsed.origin !== origin) return false
     if (allowedOrigins.includes(parsed.origin)) return true
-    const isLocalHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-    return isLocalHost && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    if (options?.allowLocalhost) {
+      const isLocalHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+      return isLocalHost && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    }
+    return false
   } catch {
     return false
   }
