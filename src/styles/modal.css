@@ -1,0 +1,131 @@
+/* ==========================================================================
+   SavePhotoModal: Matte Darkroom Dialog (Zero backdrop-filter per R-10)
+   ========================================================================== */
+.save-photo-backdrop {
+  align-items: center;
+  background: rgba(9, 8, 7, 0.84);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 16px;
+  position: fixed;
+  z-index: 60;
+}
+.save-photo-modal {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(90dvh, 680px);
+  max-width: 420px;
+  padding: 18px;
+  width: 100%;
+}
+.save-photo-modal__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.save-photo-modal__tag {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 0 0 3px;
+}
+.save-photo-modal__header h2 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.12;
+  margin: 0;
+}
+.save-photo-modal__icon-close {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--ink);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 20px;
+  font-weight: 600;
+  height: 44px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 44px;
+}
+.save-photo-modal__icon-close:hover {
+  background: var(--surface-2);
+  border-color: var(--ink);
+}
+.save-photo-modal__frame {
+  align-items: center;
+  background: var(--stage);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
+  position: relative;
+}
+.save-photo-modal__image {
+  max-height: min(48dvh, 360px);
+  object-fit: contain;
+  pointer-events: auto;
+  user-select: auto;
+  width: auto;
+  -webkit-touch-callout: default;
+}
+.save-photo-modal__hint {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 10px 12px;
+}
+.save-photo-modal__actions {
+  display: flex;
+  gap: 8px;
+}
+.save-photo-modal__primary,
+.save-photo-modal__secondary {
+  border-radius: var(--radius-sm);
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 10px 14px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.save-photo-modal__primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-ink);
+}
+.save-photo-modal__primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.save-photo-modal__secondary {
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+.save-photo-modal__secondary:hover {
+  border-color: var(--ink);
+}
+

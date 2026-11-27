@@ -1,0 +1,159 @@
+/* ==========================================================================
+   Khoảnh Khắc LiveGallery: 35mm Darkroom & Archival Contact-Sheet Styles
+   ========================================================================== */
+
+@keyframes stage-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes print-settle {
+  from {
+    opacity: 0;
+    transform: translateY(12px) rotate(calc(var(--print-rot, 2.2deg) + 1.5deg));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(var(--print-rot, 2.2deg));
+  }
+}
+
+@keyframes film-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+/* Shared Viewfinder Corner Brackets (synchronized with Photobooth) */
+.vf-corner {
+  border-color: rgba(243, 239, 230, 0.38);
+  border-style: solid;
+  border-width: 0;
+  height: 16px;
+  pointer-events: none;
+  position: absolute;
+  width: 16px;
+  z-index: 3;
+}
+.vf-corner--tl { border-left-width: 1.5px; border-top-width: 1.5px; left: 10px; top: 10px; }
+.vf-corner--tr { border-right-width: 1.5px; border-top-width: 1.5px; right: 10px; top: 10px; }
+.vf-corner--bl { border-bottom-width: 1.5px; border-left-width: 1.5px; bottom: 10px; left: 10px; }
+.vf-corner--br { border-bottom-width: 1.5px; border-right-width: 1.5px; bottom: 10px; right: 10px; }
+
+/* Brand & Header Controls (synchronized with Photobooth) */
+.brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 11px;
+  min-height: 44px;
+  min-width: 0;
+  padding: 6px 0;
+}
+.brand__mark {
+  align-items: center;
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--accent-ink);
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 38px;
+  justify-content: center;
+  transition: background-color 140ms ease;
+  width: 38px;
+}
+.brand:hover .brand__mark {
+  background: var(--accent-hover);
+}
+.camera-mark {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 2;
+}
+.camera-mark__lens {
+  fill: currentColor;
+  stroke: none;
+}
+.brand strong {
+  color: var(--ink);
+  display: block;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+}
+.brand small {
+  color: var(--muted);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+.brand--compact .brand__mark {
+  border-radius: var(--radius-sm);
+  height: 34px;
+  width: 34px;
+}
+.brand--compact strong {
+  font-size: 16.5px;
+}
+
+.header-tools {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+}
+.header-note {
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding-right: 12px;
+}
+
+.theme-toggle {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  gap: 7px;
+  justify-content: center;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0 12px;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.theme-toggle:hover {
+  background: var(--surface-2);
+  border-color: var(--ink);
+}
+.theme-toggle:active {
+  transform: translateY(1px);
+}
+.theme-toggle--compact {
+  height: 38px;
+  justify-content: center;
+  min-height: 38px;
+  min-width: 38px;
+  padding: 0;
+  width: 38px;
+}
+

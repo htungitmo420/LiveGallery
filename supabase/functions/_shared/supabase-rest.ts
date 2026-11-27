@@ -1,3 +1,5 @@
+import { toArrayBuffer } from './crypto.ts'
+
 export interface SupabaseRestConfig {
   url: string
   serviceRoleKey: string
@@ -6,6 +8,10 @@ export interface SupabaseRestConfig {
 export interface SupabaseRestResult<T> {
   data: T | null
   error: { status: number; code?: string; message: string } | null
+}
+
+function baseUrl(config: SupabaseRestConfig): string {
+  return config.url.replace(/\/+$/, '')
 }
 
 function encodeStoragePath(path: string): string {
@@ -43,7 +49,7 @@ export async function postgrestSelect<T>(
   table: string,
   queryString: string,
 ): Promise<SupabaseRestResult<T>> {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const response = await fetch(`${base}/rest/v1/${table}?${queryString}`, {
     method: 'GET',
     headers: baseHeaders(config),
@@ -60,7 +66,7 @@ export async function postgrestRpc<T>(
   fnName: string,
   args: Record<string, unknown> = {},
 ): Promise<SupabaseRestResult<T>> {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const response = await fetch(`${base}/rest/v1/rpc/${fnName}`, {
     method: 'POST',
     headers: baseHeaders(config, { 'Content-Type': 'application/json' }),
@@ -78,7 +84,7 @@ export async function postgrestDelete<T>(
   table: string,
   queryString: string,
 ): Promise<SupabaseRestResult<T>> {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const response = await fetch(`${base}/rest/v1/${table}?${queryString}`, {
     method: 'DELETE',
     headers: baseHeaders(config, { Prefer: 'return=representation' }),
@@ -91,7 +97,7 @@ export async function postgrestDelete<T>(
 }
 
 export function buildStoragePublicUrl(config: SupabaseRestConfig, bucket: string, assetPath: string): string {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const cleanPath = assetPath.replace(/^\/+/, '')
   return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanPath)}`
 }
@@ -102,7 +108,7 @@ export async function createStorageSignedUrl(
   objectPath: string,
   expiresInSeconds: number,
 ): Promise<SupabaseRestResult<string>> {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const cleanPath = objectPath.replace(/^\/+/, '')
   const response = await fetch(
     `${base}/storage/v1/object/sign/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanPath)}`,
@@ -138,20 +144,9 @@ export async function uploadStorageObject(
   contentType: string,
   cacheControl = '3600',
 ): Promise<SupabaseRestResult<void>> {
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   const cleanKey = objectKey.replace(/^\/+/, '')
-  let payload: BodyInit
-  if (body instanceof Uint8Array) {
-    if (body.byteOffset === 0 && body.byteLength === body.buffer.byteLength && body.buffer instanceof ArrayBuffer) {
-      payload = body.buffer
-    } else {
-      const copy = new Uint8Array(body.byteLength)
-      copy.set(body)
-      payload = copy.buffer
-    }
-  } else {
-    payload = body
-  }
+  const payload: BodyInit = body instanceof Uint8Array ? toArrayBuffer(body) : body
   const response = await fetch(
     `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStoragePath(cleanKey)}`,
     {
@@ -176,7 +171,7 @@ export async function removeStorageObjects(
   prefixes: readonly string[],
 ): Promise<void> {
   if (prefixes.length === 0) return
-  const base = config.url.replace(/\/+$/, '')
+  const base = baseUrl(config)
   await fetch(`${base}/storage/v1/object/${encodeURIComponent(bucket)}`, {
     method: 'DELETE',
     headers: baseHeaders(config, { 'Content-Type': 'application/json' }),

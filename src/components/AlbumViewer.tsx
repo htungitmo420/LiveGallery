@@ -1,0 +1,432 @@
+import {
+  type PointerEvent as ReactPointerEvent,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import type { ThemeMode } from '../hooks/useTheme'
+import type { ManualSaveState } from '../SavePhotoModal'
+import { formatAlbumDate, padFrame } from '../lib/format'
+import {
+  downloadGalleryMedia,
+  preloadGalleryMedia,
+  type GalleryAlbum,
+  type GalleryMedia,
+  type SaveMediaOutcome,
+} from '../lib/gallery'
+import { recordRecentAlbum } from '../lib/recentAlbums'
+import { BrandLogo, Icon, ThemeToggleButton, ViewfinderCorners } from './Chrome'
+
+const loadDecorStudio = () => import('../DecorStudio').then((mod) => ({ default: mod.DecorStudio }))
+const DecorStudio = lazy(loadDecorStudio)
+const SavePhotoModal = lazy(() => import('../SavePhotoModal').then((mod) => ({ default: mod.SavePhotoModal })))
+
+function MediaView({
+  item,
+  albumTitle,
+  onError,
+  onLoad,
+}: {
+  item: GalleryMedia
+  albumTitle: string
+  onError: () => void
+  onLoad: () => void
+}) {
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const el = imgRef.current
+    if (el && el.complete && el.naturalWidth > 0) {
+      onLoad()
+    }
+  }, [item.url, onLoad])
+
+  return (
+    <img
+      alt={`${albumTitle} - ${item.fileName}`}
+      className="viewer__media"
+      crossOrigin="anonymous"
+      decoding="async"
+      draggable={false}
+      fetchPriority="high"
+      height={item.height ?? undefined}
+      onError={onError}
+      onLoad={onLoad}
+      ref={imgRef}
+      src={item.url}
+      width={item.width ?? undefined}
+    />
+  )
+}
+
+export function AlbumViewer({
+  album,
+  onRefresh,
+  theme,
+  onToggleTheme,
+}: {
+  album: GalleryAlbum
+  onRefresh: () => Promise<GalleryAlbum>
+  theme: ThemeMode
+  onToggleTheme: () => void
+}) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [loadedAlbumCode, setLoadedAlbumCode] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [decorating, setDecorating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [manualSave, setManualSave] = useState<ManualSaveState | null>(null)
+  const [notice, setNotice] = useState('')
+  const viewerRef = useRef<HTMLDivElement>(null)
+  const pointerStart = useRef<number | null>(null)
+  const refreshedBrokenMedia = useRef(false)
+  const current = album.items[activeIndex]
+  const heroLoaded = loadedAlbumCode === album.shareCode
+
+  useEffect(() => {
+    recordRecentAlbum(album)
+  }, [album])
+
+  // Wait until the hero image finishes painting before warming the download cache or idle-prefetching DecorStudio,
+  // so nothing competes with the hero image for bandwidth on 4G connections.
+  useEffect(() => {
+    if (!heroLoaded) return
+    preloadGalleryMedia(current)
+  }, [current, heroLoaded])
+
+  useEffect(() => {
+    if (!heroLoaded) return
+    const timer = window.setTimeout(() => {
+      void loadDecorStudio()
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [heroLoaded])
+
+  const handleHeroLoad = useCallback(() => {
+    refreshedBrokenMedia.current = false
+    setLoadedAlbumCode(album.shareCode)
+  }, [album.shareCode])
+
+  const move = useCallback(
+    (direction: -1 | 1) => {
+      if (album.items.length < 2) return
+      setActiveIndex((index) => (index + direction + album.items.length) % album.items.length)
+    },
+    [album.items.length],
+  )
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (decorating || manualSave) return
+      if (event.key === 'ArrowLeft') move(-1)
+      if (event.key === 'ArrowRight') move(1)
+      if (event.key === 'Home') setActiveIndex(0)
+      if (event.key === 'End') setActiveIndex(album.items.length - 1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [album.items.length, decorating, manualSave, move])
+
+  const enterFullscreen = async () => {
+    if (!viewerRef.current) return
+    try {
+      await viewerRef.current.requestFullscreen()
+    } catch {
+      /* Fullscreen may be unavailable. */
+    }
+  }
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  const applySaveOutcome = (outcome: SaveMediaOutcome) => {
+    if (outcome.status === 'manual' && outcome.previewUrl) {
+      setManualSave({
+        file: outcome.file,
+        previewUrl: outcome.previewUrl,
+        canRetryShare: outcome.canRetryShare,
+      })
+      return
+    }
+    if (outcome.status === 'shared') {
+      setNotice('Chọn “Lưu hình ảnh” / “Ảnh” trên menu vừa mở để lưu vào bộ sưu tập Ảnh.')
+    }
+  }
+
+  const downloadCurrent = async () => {
+    if (!current || downloading) return
+    setDownloading(true)
+    setNotice('')
+    try {
+      const outcome = await downloadGalleryMedia(current)
+      applySaveOutcome(outcome)
+    } catch {
+      try {
+        const fresh = await onRefresh()
+        const replacement = fresh.items.find((item) => item.id === current.id)
+        if (!replacement) throw new Error('Ảnh không còn trong album.')
+        const outcome = await downloadGalleryMedia(replacement, { bypassCache: true })
+        applySaveOutcome(outcome)
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'Không thể tải ảnh.')
+      }
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const refreshBrokenMedia = () => {
+    if (refreshedBrokenMedia.current) return
+    refreshedBrokenMedia.current = true
+    void onRefresh().catch(() => setNotice('Không thể làm mới ảnh. Hãy thử tải lại trang.'))
+  }
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointerStart.current = event.clientX
+  }
+
+  const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (pointerStart.current === null) return
+    const distance = event.clientX - pointerStart.current
+    pointerStart.current = null
+    if (Math.abs(distance) > 48) move(distance > 0 ? -1 : 1)
+  }
+
+  if (decorating) {
+    return (
+      <div className="gallery gallery--decorating">
+        <header className="gallery__header">
+          <BrandLogo compact />
+          <div className="gallery__actions">
+            <ThemeToggleButton compact onToggle={onToggleTheme} theme={theme} />
+            <button className="icon-button" onClick={() => setDecorating(false)} type="button">
+              <Icon name="arrow-left" size={17} />
+              <span>Xem album</span>
+            </button>
+          </div>
+        </header>
+        <main className="gallery__decor-main">
+          <Suspense
+            fallback={(
+              <div className="status-card" style={{ margin: '48px auto' }}>
+                <div className="film-loader" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <h1>Đang mở phòng trang trí...</h1>
+              </div>
+            )}
+          >
+            <DecorStudio album={album} onClose={() => setDecorating(false)} />
+          </Suspense>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="gallery">
+      <header className="gallery__header">
+        <div className="gallery__brand-group">
+          <BrandLogo compact />
+          <span className="gallery__header-code">#{album.shareCode.toUpperCase()}</span>
+        </div>
+
+        <div className="gallery__actions">
+          <ThemeToggleButton compact onToggle={onToggleTheme} theme={theme} />
+          <button
+            aria-label="Trang trí ảnh"
+            className="icon-button icon-button--decor"
+            onClick={() => setDecorating(true)}
+            onFocus={() => void loadDecorStudio()}
+            onPointerEnter={() => void loadDecorStudio()}
+            type="button"
+          >
+            <Icon name="decor" size={17} />
+            <span>Trang trí</span>
+          </button>
+          <button
+            aria-label={copied ? 'Đã sao chép liên kết album' : 'Chia sẻ liên kết album'}
+            className="icon-button"
+            onClick={() => void copyLink()}
+            type="button"
+          >
+            <Icon name={copied ? 'check' : 'copy'} size={17} />
+            <span className="icon-button__text">{copied ? 'Đã chép' : 'Chia sẻ'}</span>
+          </button>
+          {current && (
+            <button
+              aria-label="Tải ảnh hiện tại"
+              className="icon-button icon-button--accent"
+              disabled={downloading}
+              onClick={() => void downloadCurrent()}
+              type="button"
+            >
+              <Icon name="download" size={17} />
+              <span className="icon-button__text">{downloading ? 'Đang tải...' : 'Tải ảnh'}</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="gallery__main">
+        {notice && <p className="gallery-notice" role="status">{notice}</p>}
+
+        <section className="album-strip">
+          <div className="album-strip__info">
+            <h1>{album.title}</h1>
+            <p className="album-strip__meta">
+              <span className="album-strip__code">#{album.shareCode.toUpperCase()}</span>
+              <span aria-hidden="true">·</span>
+              <span>{formatAlbumDate(album.createdAt)}</span>
+            </p>
+          </div>
+          <div className="album-strip__count" aria-label={`Tổng cộng ${album.items.length} khung ảnh`}>
+            <strong>{padFrame(album.items.length)}</strong>
+            <span>KHUNG</span>
+          </div>
+        </section>
+
+        {album.message && <blockquote className="album-message">“{album.message}”</blockquote>}
+
+        {current ? (
+          <>
+            <section
+              aria-label="Trình xem album"
+              className="viewer"
+              onPointerDown={onPointerDown}
+              onPointerUp={onPointerUp}
+              ref={viewerRef}
+            >
+              <ViewfinderCorners />
+
+              <div className="viewer__topbar">
+                <span>
+                  {padFrame(activeIndex + 1)} / {padFrame(album.items.length)} ·{' '}
+                  {current.kind === 'gif' ? 'GIF' : 'ẢNH'}
+                </span>
+                <span>
+                  {current.width && current.height
+                    ? `${current.width}×${current.height}`
+                    : `#${album.shareCode.toUpperCase()}`}
+                </span>
+              </div>
+
+              <MediaView
+                albumTitle={album.title}
+                item={current}
+                onError={refreshBrokenMedia}
+                onLoad={handleHeroLoad}
+              />
+
+              {album.items.length > 1 && (
+                <>
+                  <button
+                    aria-label="Ảnh trước"
+                    className="viewer__nav viewer__nav--left"
+                    onClick={() => move(-1)}
+                    type="button"
+                  >
+                    <Icon name="chevron-left" size={24} />
+                  </button>
+                  <button
+                    aria-label="Ảnh tiếp theo"
+                    className="viewer__nav viewer__nav--right"
+                    onClick={() => move(1)}
+                    type="button"
+                  >
+                    <Icon name="chevron-right" size={24} />
+                  </button>
+                </>
+              )}
+
+              <button
+                aria-label="Xem toàn màn hình"
+                className="viewer__fullscreen"
+                onClick={() => void enterFullscreen()}
+                type="button"
+              >
+                <Icon name="expand" size={18} />
+              </button>
+            </section>
+
+            <div className="filmstrip-rail">
+              <div className="thumbnail-row" role="list" aria-label="Danh sách khung ảnh 35mm">
+                {album.items.map((item, index) => {
+                  const isActive = index === activeIndex
+                  const isUnthumbnailedGif = item.kind === 'gif' && !item.thumbnailUrl
+                  const shouldLoadThumb = isActive || (heroLoaded && !isUnthumbnailedGif)
+                  return (
+                    <button
+                      aria-current={isActive}
+                      aria-label={`Xem khung ảnh ${padFrame(index + 1)}`}
+                      className="thumbnail"
+                      key={item.id}
+                      onClick={() => setActiveIndex(index)}
+                      role="listitem"
+                      type="button"
+                    >
+                      {shouldLoadThumb ? (
+                        <img
+                          alt=""
+                          crossOrigin="anonymous"
+                          decoding="async"
+                          fetchPriority={isActive ? 'high' : 'low'}
+                          height={56}
+                          loading={isActive ? 'eager' : 'lazy'}
+                          src={item.thumbnailUrl ?? item.url}
+                          width={74}
+                        />
+                      ) : isUnthumbnailedGif ? (
+                        <span className="thumbnail__gif" aria-hidden="true">GIF</span>
+                      ) : (
+                        <span className="thumbnail__placeholder" aria-hidden="true" />
+                      )}
+                      <span className="thumbnail__num" aria-hidden="true">{padFrame(index + 1)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="empty-album">
+            <Icon name="image" size={34} />
+            <h2>Album chưa có ảnh</h2>
+            <p>Ảnh mới sẽ xuất hiện tại đây ngay sau khi máy photobooth tải lên.</p>
+          </div>
+        )}
+      </main>
+
+      <footer className="gallery__footer">
+        <span>Dùng phím mũi tên hoặc vuốt để chuyển khung ảnh</span>
+        <a href="/">
+          <Icon name="arrow-left" size={15} />
+          <span>Mở album khác</span>
+        </a>
+      </footer>
+
+      {manualSave && (
+        <Suspense fallback={null}>
+          <SavePhotoModal
+            item={manualSave}
+            onClose={() => setManualSave(null)}
+            onShared={() => setNotice('Đã mở menu lưu ảnh vào bộ sưu tập Ảnh.')}
+          />
+        </Suspense>
+      )}
+    </div>
+  )
+}

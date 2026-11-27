@@ -1,0 +1,80 @@
+/* ==========================================================================
+   Loading & Error Status Shell
+   ========================================================================== */
+.status-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 0;
+  width: min(1280px, calc(100% - 36px));
+}
+.status-page {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  padding: 28px 0;
+}
+.status-card {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  max-width: 460px;
+  padding: 36px 28px;
+  text-align: center;
+  width: 100%;
+}
+.status-card__icon {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--accent-text);
+  display: inline-flex;
+  height: 52px;
+  justify-content: center;
+  margin-bottom: 16px;
+  width: 52px;
+}
+.status-card__code {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+.status-card h1 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 10px;
+}
+.status-card p {
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.58;
+  margin: 0 0 24px;
+}
+.film-loader {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 18px;
+}
+.film-loader span {
+  animation: film-pulse 900ms ease-in-out infinite;
+  background: var(--accent);
+  border-radius: 1px;
+  height: 12px;
+  width: 8px;
+}
+.film-loader span:nth-child(2) { animation-delay: 140ms; }
+.film-loader span:nth-child(3) { animation-delay: 280ms; }
+.film-loader span:nth-child(4) { animation-delay: 420ms; }
+

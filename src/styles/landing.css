@@ -1,0 +1,527 @@
+/* ==========================================================================
+   Landing Page: Asymmetric 35mm Darkroom Split
+   ========================================================================== */
+.landing {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 0;
+  width: min(1280px, calc(100% - 36px));
+}
+
+.landing__header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 64px;
+}
+
+.hero {
+  align-items: center;
+  display: grid;
+  gap: clamp(28px, 4.5vw, 68px);
+  grid-template-columns: minmax(0, 1.04fr) minmax(320px, 0.96fr);
+  margin: 0 auto;
+  padding: clamp(24px, 4.5vh, 44px) 0;
+  width: 100%;
+}
+
+.hero__copy {
+  animation: stage-enter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  min-width: 0;
+}
+
+.hero h1 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(42px, 5.6vw, 76px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.98;
+  margin: 0;
+  max-width: 600px;
+}
+
+.hero__lead {
+  color: var(--muted);
+  font-size: clamp(14.5px, 1.25vw, 17px);
+  line-height: 1.62;
+  margin: 18px 0 28px;
+  max-width: 520px;
+}
+
+/* Physical Photobooth Claim-Stub Lookup Form */
+.claim-stub {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  max-width: 540px;
+  padding: 16px 18px 14px;
+  position: relative;
+}
+
+.claim-stub__head {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+
+.claim-stub__head label {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.claim-stub__spec {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.claim-stub__tear {
+  border-top: 1px dashed var(--line-strong);
+  height: 1px;
+  margin: 0 -18px 14px;
+  position: relative;
+}
+.claim-stub__tear::before,
+.claim-stub__tear::after {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  content: '';
+  height: 14px;
+  position: absolute;
+  top: -7.5px;
+  width: 14px;
+}
+.claim-stub__tear::before {
+  border-left-color: transparent;
+  left: -8px;
+}
+.claim-stub__tear::after {
+  border-right-color: transparent;
+  right: -8px;
+}
+
+.claim-stub__body {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+}
+
+.claim-stub__field {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 12px;
+  transition: border-color 140ms ease;
+}
+.claim-stub__field:focus-within {
+  border-color: var(--accent);
+}
+
+.claim-stub__hash {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  margin-right: 6px;
+  user-select: none;
+}
+
+.claim-stub__field input {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  min-height: 44px;
+  min-width: 0;
+  padding: 10px 0;
+  text-transform: uppercase;
+}
+.claim-stub__field input:focus-visible {
+  outline: none;
+}
+.claim-stub__field input::placeholder {
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.85;
+  text-transform: none;
+}
+
+.claim-stub__submit,
+.primary-link {
+  align-items: center;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-ink);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 22px;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.claim-stub__submit:hover,
+.primary-link:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.claim-stub__submit:active,
+.primary-link:active {
+  transform: translateY(1px);
+}
+
+.claim-stub__message {
+  color: var(--danger-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin: 8px 0 0;
+  min-height: 18px;
+}
+
+/* Real Recent Albums (only rendered when localStorage has visited albums) */
+.recent-albums {
+  margin-top: 22px;
+  max-width: 540px;
+}
+.recent-albums__head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.recent-albums__head h2 {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
+}
+.recent-albums__head span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.recent-albums__list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recent-albums__item {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.recent-albums__item:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+.recent-albums__link {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 0;
+  padding: 8px 12px;
+}
+.recent-albums__code {
+  color: var(--accent-text);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.recent-albums__name {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-albums__remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 17px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  width: 44px;
+}
+.recent-albums__remove:hover {
+  color: var(--ink);
+}
+
+/* Right Column: 35mm Filmstrip Contact-Sheet & Archival Light-Table Showcase */
+.hero__visual {
+  animation: stage-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) 70ms both;
+  min-width: 0;
+  width: 100%;
+}
+
+.darkroom-table {
+  background: var(--stage);
+  border: 1px solid var(--stage-line-strong);
+  border-radius: var(--radius-md);
+  color: var(--stage-ink);
+  display: flex;
+  flex-direction: column;
+  height: clamp(410px, 58vh, 490px);
+  overflow: hidden;
+  padding: 24px 28px 28px;
+  position: relative;
+  width: 100%;
+}
+
+.darkroom-table__bar {
+  align-items: center;
+  border-bottom: 1px solid var(--stage-line);
+  color: var(--stage-muted);
+  display: flex;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 0 4px 12px;
+  position: relative;
+  z-index: 2;
+}
+
+.darkroom-table__canvas {
+  align-items: center;
+  background: var(--light-table);
+  border: 1px solid var(--stage-line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex: 1 1 0;
+  gap: clamp(14px, 3%, 26px);
+  justify-content: center;
+  margin-top: 14px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 18px 16px;
+  position: relative;
+}
+
+/* Vertical 35mm Filmstrip with Authentic Sprocket Perforations */
+.filmstrip-35mm {
+  background: #171614;
+  border: 1px solid #35312b;
+  border-radius: var(--radius-xs);
+  display: grid;
+  flex: 0 1 auto;
+  gap: 8px;
+  grid-template-columns: 12px 1fr 12px;
+  height: 100%;
+  max-height: 312px;
+  min-width: 0;
+  padding: 8px 6px;
+  width: clamp(128px, 40%, 184px);
+}
+
+.filmstrip-35mm__track {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 6px,
+    #090807 6px 15px,
+    transparent 15px 22px
+  );
+  border-radius: 1px;
+  opacity: 0.95;
+}
+
+.filmstrip-35mm__frames {
+  display: grid;
+  gap: 7px;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  min-height: 0;
+}
+
+.filmstrip-35mm__frame {
+  border: 1px solid rgba(243, 239, 230, 0.14);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 180ms ease;
+}
+
+.filmstrip-35mm__tone {
+  height: 100%;
+  width: 100%;
+}
+.filmstrip-35mm__frame--1 .filmstrip-35mm__tone {
+  background: linear-gradient(150deg, #4b392b 0%, #2a211b 65%, #191411 100%);
+}
+.filmstrip-35mm__frame--2 .filmstrip-35mm__tone {
+  background: linear-gradient(155deg, #2d3e3c 0%, #1c2827 62%, #131918 100%);
+}
+.filmstrip-35mm__frame--3 .filmstrip-35mm__tone {
+  background: linear-gradient(145deg, #744c2e 0%, #3d281b 64%, #1f1611 100%);
+}
+.filmstrip-35mm__frame--4 .filmstrip-35mm__tone {
+  background: linear-gradient(155deg, #564d42 0%, #2c2823 64%, #171513 100%);
+}
+
+.filmstrip-35mm__num {
+  color: #e5a93c;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  left: 6px;
+  position: absolute;
+  top: 4px;
+  z-index: 1;
+}
+
+/* Physical White-Bordered Archival Print Resting on Light-Table */
+.archival-print {
+  --print-rot: 2deg;
+  animation: print-settle 460ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+  background: var(--print-paper);
+  border: 1px solid rgba(23, 20, 18, 0.12);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-print);
+  color: var(--print-ink);
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  height: 100%;
+  max-height: 296px;
+  min-width: 0;
+  padding: 11px 11px 15px;
+  position: relative;
+  transform: rotate(var(--print-rot));
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  width: clamp(148px, 46%, 212px);
+  z-index: 2;
+}
+
+.darkroom-table:hover .archival-print {
+  transform: rotate(0.8deg) translateY(-3px);
+}
+
+.archival-print__exposure {
+  background: linear-gradient(162deg, #c97f4a 0% 34%, #4f6360 34% 66%, #24211e 66% 100%);
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.archival-print__horizon {
+  background: rgba(247, 243, 235, 0.22);
+  height: 1px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 66%;
+}
+
+.archival-print__figures {
+  align-items: flex-end;
+  bottom: -2px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+.archival-print__figures span {
+  background: #171412;
+  border-radius: 50% 50% 10% 10%;
+  height: 44%;
+  width: 24%;
+}
+.archival-print__figures span:nth-child(2) {
+  height: 58%;
+  width: 28%;
+}
+
+.archival-print__stamp {
+  color: rgba(247, 243, 235, 0.86);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  position: absolute;
+  right: 8px;
+  top: 7px;
+}
+
+.archival-print__caption {
+  flex: none;
+  margin-top: 11px;
+  text-align: center;
+}
+.archival-print__caption p {
+  color: var(--print-ink);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 3px;
+}
+.archival-print__caption small {
+  color: var(--print-muted);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.landing__footer,
+.gallery__footer {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 500;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 48px;
+}
+.footer-mono {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+
