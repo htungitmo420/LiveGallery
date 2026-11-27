@@ -1,4 +1,5 @@
 import type { CollagePattern, StickerCategory } from '../decor'
+import type { DiyFilterId, DiyLayoutId } from '../lib/diy/types'
 
 export type Locale = 'vi' | 'en' | 'ru'
 
@@ -41,6 +42,10 @@ export interface GalleryMessages {
     clearRecent: string
     clearRecentAria: string
     removeRecentAria: (title: string) => string
+    diyBadge: string
+    diyTitle: string
+    diyDesc: string
+    diyAction: string
     contactSheetBar: string
     mediaTag: string
     footerBrand: string
@@ -206,5 +211,44 @@ export interface GalleryMessages {
     positionTop: string
     positionBottom: string
     categories: Record<'all' | StickerCategory, string>
+  }
+  diy: {
+    studioTag: string
+    studioTitle: string
+    backHome: string
+    openingStudio: string
+    decorateAction: string
+    saveAction: string
+    renderingLabel: string
+    stepLayoutTitle: string
+    stepPhotosTitle: (filled: number, total: number) => string
+    pickPhotosAction: (filled: number, total: number) => string
+    clearPhotos: string
+    emptySlotLabel: (num: string) => string
+    replaceSlotAria: (num: string) => string
+    moveLeftAria: (num: string) => string
+    moveRightAria: (num: string) => string
+    removeSlotAria: (num: string) => string
+    stepFramesTitle: string
+    framesRemoteTag: string
+    framesBuiltinTag: string
+    loadingFrames: string
+    stepFilterTitle: string
+    captionLabel: string
+    captionPlaceholder: string
+    showDateLabel: string
+    needMorePhotosHint: (missing: number, total: number) => string
+    readyHint: string
+    invalidFileNotice: string
+    sharedNotice: string
+    downloadedNotice: string
+    manualSaveNotice: string
+    renderError: string
+    syntheticAlbumTitle: string
+    backToCompose: string
+    previewAria: string
+    layouts: Record<DiyLayoutId, { name: string; slotsLabel: string }>
+    filters: Record<DiyFilterId, string>
+    builtinFrames: Record<string, string>
   }
 }

@@ -13,6 +13,7 @@
   }
   .hero__copy,
   .claim-stub,
+  .diy-entry,
   .recent-albums {
     max-width: 100%;
   }
@@ -148,6 +149,42 @@
     font-size: 11.5px;
     margin-top: 7px;
   }
+  .diy-shell {
+    padding: 0 10px;
+  }
+  .diy-studio {
+    padding: 8px 0;
+  }
+  .diy-studio__bar {
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+  }
+  .diy-studio__code {
+    display: none;
+  }
+  .diy-studio__title h1 {
+    font-size: 18.5px;
+  }
+  .diy-action-btn {
+    min-height: 44px;
+    padding: 0 11px;
+  }
+  .diy-workspace {
+    gap: 8px;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .diy-preview {
+    padding: 10px;
+  }
+  .diy-controls {
+    max-height: min(46dvh, 330px);
+    padding: 10px 12px;
+  }
+  .diy-filter-row button {
+    min-height: 40px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -231,6 +268,15 @@
     flex-direction: column;
   }
   .claim-stub__submit {
+    width: 100%;
+  }
+  .diy-entry {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+  }
+  .diy-entry__cta {
     width: 100%;
   }
   .darkroom-table {

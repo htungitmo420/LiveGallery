@@ -9,14 +9,18 @@ import {
   removeRecentAlbumEntry,
   type RecentAlbumEntry,
 } from '../lib/recentAlbums'
-import { BrandLogo, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
+import { BrandLogo, Icon, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
 
 export function LandingPage({
   theme,
   onToggleTheme,
+  onOpenCreate,
+  onPrefetchCreate,
 }: {
   theme: ThemeMode
   onToggleTheme: () => void
+  onOpenCreate: () => void
+  onPrefetchCreate?: () => void
 }) {
   const { locale, messages } = useLocale()
   const [value, setValue] = useState('')
@@ -89,6 +93,28 @@ export function LandingPage({
               {invalidCode ? messages.landing.claimInvalid : ''}
             </p>
           </form>
+
+          <section aria-labelledby="diy-entry-title" className="diy-entry">
+            <div className="diy-entry__copy">
+              <p className="diy-entry__badge">{messages.landing.diyBadge}</p>
+              <h2 id="diy-entry-title">{messages.landing.diyTitle}</h2>
+              <p>{messages.landing.diyDesc}</p>
+            </div>
+            <a
+              className="diy-entry__cta"
+              href="/create"
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+                event.preventDefault()
+                onOpenCreate()
+              }}
+              onFocus={() => onPrefetchCreate?.()}
+              onPointerEnter={() => onPrefetchCreate?.()}
+            >
+              <Icon name="image" size={16} />
+              <span>{messages.landing.diyAction}</span>
+            </a>
+          </section>
 
           {recentAlbums.length > 0 && (
             <section aria-labelledby="recent-albums-title" className="recent-albums">

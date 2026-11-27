@@ -202,6 +202,67 @@
   min-height: 18px;
 }
 
+/* Standalone DIY Photobooth Entry Card */
+.diy-entry {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-top: 14px;
+  max-width: 540px;
+  padding: 14px 16px;
+}
+.diy-entry__copy {
+  min-width: 0;
+}
+.diy-entry__badge {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px;
+}
+.diy-entry__copy h2 {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 4px;
+}
+.diy-entry__copy p:last-child {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.48;
+  margin: 0;
+}
+.diy-entry__cta {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  color: var(--accent-text);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 15px;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  white-space: nowrap;
+}
+.diy-entry__cta:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 /* Real Recent Albums (only rendered when localStorage has visited albums) */
 .recent-albums {
   margin-top: 22px;

@@ -102,6 +102,14 @@ const ERROR_TRANSLATIONS: Record<string, { en: string; ru: string }> = {
     en: 'Could not update local background storage.',
     ru: 'Не удалось обновить локальное хранилище фонов.',
   },
+  'Không thể tải ảnh để ghép khung.': {
+    en: 'Could not load image for strip composition.',
+    ru: 'Не удалось загрузить изображение для рамки.',
+  },
+  'Không thể tạo ảnh photobooth.': {
+    en: 'Could not create photobooth print.',
+    ru: 'Не удалось создать фотополосу.',
+  },
 }
 
 export function normalizeLocale(raw: unknown): Locale | null {

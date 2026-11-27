@@ -63,6 +63,28 @@ interface BackgroundRow {
   asset_path: string
 }
 
+interface FrameRow {
+  id: string
+  name: string
+  description: string | null
+  config: Record<string, unknown> | null
+  asset_path: string | null
+  layout_id: string | null
+  asset_width: number | null
+  asset_height: number | null
+}
+
+interface FrameCatalogItem {
+  id: string
+  name: string
+  description: string
+  config: Record<string, unknown>
+  assetUrl: string | null
+  layoutId: string | null
+  assetWidth: number | null
+  assetHeight: number | null
+}
+
 interface DecorCatalog {
   stickers: Array<{ id: string; name: string; category: string; url: string }>
   backgrounds: Array<{ id: string; name: string; url: string }>
@@ -70,6 +92,53 @@ interface DecorCatalog {
 
 let cachedDecorCatalog: { expiresAt: number; value: DecorCatalog } | null = null
 let inFlightDecorCatalog: Promise<DecorCatalog> | null = null
+let cachedFramesCatalog: { expiresAt: number; value: FrameCatalogItem[] } | null = null
+let inFlightFramesCatalog: Promise<FrameCatalogItem[]> | null = null
+
+async function getFramesCatalog(config: SupabaseRestConfig): Promise<FrameCatalogItem[]> {
+  const now = Date.now()
+  if (cachedFramesCatalog && cachedFramesCatalog.expiresAt > now) {
+    return cachedFramesCatalog.value
+  }
+  if (inFlightFramesCatalog) {
+    return inFlightFramesCatalog
+  }
+
+  inFlightFramesCatalog = (async () => {
+    const result = await postgrestSelect<FrameRow[]>(
+      config,
+      'photobooth_frames',
+      'select=id,name,description,config,asset_path,layout_id,asset_width,asset_height&is_published=eq.true&order=sort_order.asc,name.asc',
+    )
+    if (result.error) {
+      console.error('Frame catalog lookup failed')
+      return []
+    }
+    const frames: FrameCatalogItem[] = (result.data ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? '',
+      config: row.config && typeof row.config === 'object' ? row.config : {},
+      assetUrl: row.asset_path
+        ? buildStoragePublicUrl(config, 'photobooth-frames', row.asset_path)
+        : null,
+      layoutId: row.layout_id ?? null,
+      assetWidth: row.asset_width ?? null,
+      assetHeight: row.asset_height ?? null,
+    }))
+    cachedFramesCatalog = {
+      expiresAt: Date.now() + decorCatalogCacheTtlMs,
+      value: frames,
+    }
+    return frames
+  })()
+
+  try {
+    return await inFlightFramesCatalog
+  } finally {
+    inFlightFramesCatalog = null
+  }
+}
 
 async function getDecorCatalog(config: SupabaseRestConfig): Promise<DecorCatalog> {
   const now = Date.now()
@@ -156,11 +225,8 @@ Deno.serve(async (request: Request) => {
     return json({ error: 'Phương thức không được hỗ trợ.' }, 405)
   }
 
-  const code = new URL(request.url).searchParams.get('code')?.trim().toLowerCase()
-  if (!code || !codePattern.test(code)) {
-    return json({ error: 'Mã album không hợp lệ.' }, 400)
-  }
-
+  const requestUrl = new URL(request.url)
+  const isCatalogRequest = requestUrl.searchParams.get('catalog') === '1'
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   if (!supabaseUrl || !serviceRoleKey) {
@@ -169,6 +235,29 @@ Deno.serve(async (request: Request) => {
   }
 
   const dbConfig: SupabaseRestConfig = { url: supabaseUrl, serviceRoleKey }
+
+  if (isCatalogRequest) {
+    const dbStart = performance.now()
+    const [frames, decor] = await Promise.all([
+      getFramesCatalog(dbConfig),
+      getDecorCatalog(dbConfig),
+    ])
+    const dbDuration = performance.now() - dbStart
+    const totalDuration = performance.now() - startedAt
+    return json(
+      { frames, decor },
+      200,
+      {
+        'Cache-Control': `public, max-age=${manifestCacheMaxAgeSeconds}`,
+        'Server-Timing': `db;dur=${dbDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+      },
+    )
+  }
+
+  const code = requestUrl.searchParams.get('code')?.trim().toLowerCase()
+  if (!code || !codePattern.test(code)) {
+    return json({ error: 'Mã album không hợp lệ.' }, 400)
+  }
 
   const dbStart = performance.now()
   const albumQuery = [
