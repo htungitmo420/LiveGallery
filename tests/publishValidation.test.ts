@@ -3,7 +3,7 @@ import {
   MAX_FILE_BYTES,
   validateCompleteFiles,
   validateInitFiles,
-} from '../../supabase/functions/album-publish/validation.ts'
+} from '../supabase/functions/album-publish/validation.ts'
 
 const ALBUM_ID = '550e8400-e29b-41d4-a716-446655440000'
 const FILE_1 = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'

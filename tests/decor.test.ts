@@ -9,7 +9,7 @@ import {
   normalizeStickerRotation,
   transformStickerByGesture,
   type PlacedSticker,
-} from './decor'
+} from '../src/decor'
 
 const sticker: PlacedSticker = {
   id: 'rabbit',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_COLLAGE, MAX_COLLAGE_ITEMS, MAX_STICKERS } from './model'
-import { sanitizeStoredCollage, sanitizeStoredStickers } from './storage'
+import { DEFAULT_COLLAGE, MAX_COLLAGE_ITEMS, MAX_STICKERS } from '../src/decor/model'
+import { sanitizeStoredCollage, sanitizeStoredStickers } from '../src/decor/storage'
 
 describe('decor storage sanitization', () => {
   it('filters malformed or unsafe stickers, clamps bounds, and caps at MAX_STICKERS', () => {

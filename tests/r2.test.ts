@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import indexHtmlRaw from '../../index.html?raw'
-import vercelJsonRaw from '../../vercel.json?raw'
+import indexHtmlRaw from '../index.html?raw'
+import vercelJsonRaw from '../vercel.json?raw'
 import {
   DEFAULT_R2_MAX_STORAGE_BYTES,
   EMPTY_SHA256_HEX,
@@ -30,13 +30,13 @@ import {
   verifyUploadTokenForAbort,
   type R2Config,
   type UploadManifestFile,
-} from '../../supabase/functions/_shared/r2.ts'
+} from '../supabase/functions/_shared/r2.ts'
 import {
   buildStoragePublicUrl,
   createStorageSignedUrl,
   postgrestRpc,
   postgrestSelect,
-} from '../../supabase/functions/_shared/supabase-rest.ts'
+} from '../supabase/functions/_shared/supabase-rest.ts'
 
 const TEST_R2_CONFIG: R2Config = {
   accountId: '0123456789abcdef0123456789abcdef',

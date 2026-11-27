@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readRecentAlbums, recordRecentAlbum, removeRecentAlbumEntry } from './recentAlbums'
+import { readRecentAlbums, recordRecentAlbum, removeRecentAlbumEntry } from '../src/lib/recentAlbums'
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()

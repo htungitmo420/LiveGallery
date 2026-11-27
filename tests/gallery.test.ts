@@ -11,10 +11,11 @@ import {
   normalizeShareCode,
   parseManifest,
   saveMediaFileToDevice,
-} from './gallery'
+} from '../src/lib/gallery'
 
 afterEach(() => {
   clearAlbumManifestCache()
+  vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -217,6 +218,7 @@ describe('mobile photo export helpers', () => {
 
 describe('manifest caching and in-flight deduplication', () => {
   it('deduplicates concurrent fetchAlbum calls and serves subsequent reads from cache until bypassed', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co')
     const manifestPayload = {
       album: {
         shareCode: 'fast999',
