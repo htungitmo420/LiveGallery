@@ -1,4 +1,4 @@
-export type GalleryMediaKind = 'image' | 'gif'
+export type GalleryMediaKind = 'image' | 'gif' | 'video'
 
 export interface GalleryMedia {
   id: string

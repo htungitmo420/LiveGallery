@@ -15,6 +15,7 @@ import {
   saveAllMediaFilesToDevice,
   saveMediaFileToDevice,
 } from '../src/lib/gallery'
+import { selectStoryVideoMimeType } from '../src/lib/storyVideoExport'
 
 afterEach(() => {
   clearAlbumManifestCache()
@@ -42,7 +43,7 @@ describe('share code routing', () => {
 })
 
 describe('manifest parsing', () => {
-  it('accepts image items and omits legacy videos', () => {
+  it('accepts image and Moving Strip video items in manifest', () => {
     const album = parseManifest({
       album: {
         shareCode: 'D44092',
@@ -67,21 +68,23 @@ describe('manifest parsing', () => {
         {
           id: 'video-1',
           kind: 'video',
-          url: 'https://example.com/video.mp4',
+          url: 'https://example.com/moving-strip.mp4',
           thumbnailUrl: 'https://example.com/thumb.jpg',
           mimeType: 'video/mp4',
-          fileName: 'video.mp4',
-          width: 1080,
+          fileName: 'moving-strip.mp4',
+          width: 720,
           height: 1920,
-          durationMs: 6000,
+          durationMs: 4500,
           sortOrder: 1,
         },
       ],
     })
 
     expect(album.shareCode).toBe('d44092')
-    expect(album.items).toHaveLength(1)
+    expect(album.items).toHaveLength(2)
     expect(album.items[0].kind).toBe('image')
+    expect(album.items[1].kind).toBe('video')
+    expect(album.items[1].fileName).toBe('moving-strip.mp4')
     expect(album.stickers).toEqual([])
     expect(album.backgrounds).toEqual([])
   })
@@ -179,9 +182,20 @@ describe('mobile photo export helpers', () => {
     expect(normalizeMediaFileName('photobooth.webp', 'image/jpeg')).toBe('photobooth.jpg')
     expect(normalizeMediaFileName('khoanh-khac', 'image/jpeg')).toBe('photobooth.jpg')
     expect(normalizeMediaFileName('khoanh-khac.gif', 'image/gif')).toBe('photobooth.gif')
+    expect(normalizeMediaFileName('moving-strip', 'video/mp4')).toBe('moving-strip.mp4')
+    expect(normalizeMediaFileName('moving-strip.mp4', 'video/webm')).toBe('moving-strip.webm')
     expect(normalizeMediaFileName('anh-01.jpg', 'image/jpeg')).toBe('photo-01.jpg')
     expect(normalizeMediaFileName('  anh 01.png  ', 'image/png')).toBe('photo-01.png')
     expect(normalizeMediaFileName('', 'image/jpeg')).toBe('photo.jpg')
+  })
+
+  it('prefers MP4 H.264 for Story video export and falls back to WebM', () => {
+    expect(
+      selectStoryVideoMimeType((mime) => mime === 'video/mp4;codecs=avc1.42E01E' || mime === 'video/webm;codecs=vp9'),
+    ).toBe('video/mp4;codecs=avc1.42E01E')
+    expect(
+      selectStoryVideoMimeType((mime) => mime === 'video/webm;codecs=vp9'),
+    ).toBe('video/webm;codecs=vp9')
   })
 
   it('shares files directly on mobile without text fields so iOS and Android show Save to Photos', async () => {

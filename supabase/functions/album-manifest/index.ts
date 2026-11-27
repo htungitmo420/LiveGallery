@@ -264,7 +264,6 @@ Deno.serve(async (request: Request) => {
     'select=id,share_code,title,message,created_at,expires_at,photobooth_album_assets(id,kind,storage_path,thumbnail_path,mime_type,file_name,sort_order,width,height,duration_ms)',
     `share_code=eq.${encodeURIComponent(code)}`,
     'status=eq.published',
-    'photobooth_album_assets.kind=neq.video',
     'photobooth_album_assets.order=sort_order.asc',
     'limit=1',
   ].join('&')
@@ -287,7 +286,7 @@ Deno.serve(async (request: Request) => {
   }
 
   const assets = (album.photobooth_album_assets ?? [])
-    .filter((asset) => asset.kind !== 'video')
+    .slice()
     .sort((a, b) => a.sort_order - b.sort_order)
 
   const signStart = performance.now()

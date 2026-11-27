@@ -23,9 +23,45 @@ describe('album-publish payload validation', () => {
     expect(result.totalBytes).toBe(1_600_000)
     expect(result.files.map((item) => item.name)).toEqual([
       'photobooth.jpg',
-      'khoanh-khac.gif',
-      'anh-01.webp',
+      'photobooth.gif',
+      'photo-01.webp',
     ])
+  })
+
+  it('accepts GIF-free Moving PhotoStrip MP4 albums and exact-layout photos', () => {
+    const result = validateInitFiles('strip4', [
+      { role: 'strip', mimeType: 'image/jpeg', byteSize: 500_000 },
+      { role: 'video', mimeType: 'video/mp4; codecs=avc1.42E01E', byteSize: 2_800_000 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 400_000 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 400_000 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 400_000 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 400_000 },
+    ])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.files.map((item) => item.name)).toEqual([
+      'photobooth.jpg',
+      'moving-strip.mp4',
+      'photo-01.jpg',
+      'photo-02.jpg',
+      'photo-03.jpg',
+      'photo-04.jpg',
+    ])
+
+    const polaroidNoGif = validateInitFiles('polaroid', [
+      { role: 'strip', mimeType: 'image/jpeg', byteSize: 300_000 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 250_000 },
+    ])
+    expect(polaroidNoGif.ok).toBe(true)
+
+    const duplicateVideo = validateInitFiles('polaroid', [
+      { role: 'strip', mimeType: 'image/jpeg', byteSize: 100 },
+      { role: 'video', mimeType: 'video/mp4', byteSize: 100 },
+      { role: 'video', mimeType: 'video/webm', byteSize: 100 },
+      { role: 'photo', mimeType: 'image/jpeg', byteSize: 100 },
+    ])
+    expect(duplicateVideo.ok).toBe(false)
   })
 
   it('rejects mismatched photo counts, unsupported MIME types, and oversized albums', () => {

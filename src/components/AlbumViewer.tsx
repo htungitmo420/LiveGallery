@@ -17,12 +17,14 @@ import {
   downloadAllGalleryMedia,
   downloadGalleryMedia,
   preloadGalleryMedia,
+  saveMediaFileToDevice,
   type GalleryAlbum,
   type GalleryMedia,
   type SaveAllMediaOutcome,
   type SaveMediaOutcome,
 } from '../lib/gallery'
 import { recordRecentAlbum } from '../lib/recentAlbums'
+import { exportStoryVideoFile } from '../lib/storyVideoExport'
 import { BrandLogo, Icon, LanguageSwitch, ThemeToggleButton, ViewfinderCorners } from './Chrome'
 import type { SaveAllModalState } from './SaveAllModal'
 
@@ -51,6 +53,25 @@ function MediaView({
       onLoad()
     }
   }, [item.url, onLoad])
+
+  if (item.kind === 'video') {
+    return (
+      <video
+        aria-label={`${albumTitle} - ${item.fileName}`}
+        autoPlay
+        className="viewer__media viewer__media--video"
+        controls
+        crossOrigin="anonymous"
+        loop
+        muted
+        onError={onError}
+        onLoadedData={onLoad}
+        playsInline
+        preload="metadata"
+        src={item.url}
+      />
+    )
+  }
 
   return (
     <img
@@ -88,6 +109,7 @@ export function AlbumViewer({
   const [decorating, setDecorating] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [savingAll, setSavingAll] = useState(false)
+  const [exportingStory, setExportingStory] = useState(false)
   const [saveAllProgress, setSaveAllProgress] = useState<{ done: number; total: number } | null>(null)
   const [manualSave, setManualSave] = useState<ManualSaveState | null>(null)
   const [saveAllModal, setSaveAllModal] = useState<SaveAllModalState | null>(null)
@@ -97,6 +119,7 @@ export function AlbumViewer({
   const pointerStart = useRef<number | null>(null)
   const refreshedBrokenMedia = useRef(false)
   const current = album.items[activeIndex]
+  const movingVideo = album.items.find((item) => item.kind === 'video')
   const heroLoaded = loadedAlbumCode === album.shareCode
   const albumShareUrl = `${window.location.origin}${buildAlbumPath(album.shareCode)}${locale === 'vi' ? '' : `?lang=${locale}`}`
 
@@ -222,7 +245,7 @@ export function AlbumViewer({
   }
 
   const saveAllPhotos = async () => {
-    if (album.items.length === 0 || savingAll || downloading) return
+    if (album.items.length === 0 || savingAll || downloading || exportingStory) return
     setSavingAll(true)
     setSaveAllProgress({ done: 0, total: album.items.length })
     setNotice('')
@@ -247,6 +270,41 @@ export function AlbumViewer({
     } finally {
       setSavingAll(false)
       setSaveAllProgress(null)
+    }
+  }
+
+  const exportStoryVideo = async () => {
+    if (!movingVideo || exportingStory || savingAll || downloading) return
+    setExportingStory(true)
+    setNotice('')
+    const runExport = async (target: GalleryMedia) => {
+      const storyFile = await exportStoryVideoFile(target, album.title)
+      const outcome = await saveMediaFileToDevice(storyFile)
+      if (outcome.status === 'manual' && outcome.previewUrl) {
+        setManualSave({
+          file: outcome.file,
+          previewUrl: outcome.previewUrl,
+          canRetryShare: outcome.canRetryShare,
+        })
+      } else if (outcome.status === 'shared') {
+        setNotice(messages.viewer.storySharedNotice)
+      } else if (outcome.status === 'downloaded') {
+        setNotice(messages.viewer.storyDownloadedNotice)
+      }
+    }
+    try {
+      await runExport(movingVideo)
+    } catch {
+      try {
+        const fresh = await onRefresh()
+        const replacement = fresh.items.find((item) => item.kind === 'video')
+        if (!replacement) throw new Error(messages.viewer.missingPhotoError)
+        await runExport(replacement)
+      } catch (error) {
+        setNotice(error instanceof Error ? localizeErrorMessage(error.message, locale) : messages.viewer.storyExportError)
+      }
+    } finally {
+      setExportingStory(false)
     }
   }
 
@@ -373,11 +431,25 @@ export function AlbumViewer({
                 <Icon name="qr" size={16} />
                 <span>{messages.viewer.qrLabel}</span>
               </button>
+              {movingVideo && (
+                <button
+                  aria-label={messages.viewer.storyVideoAria}
+                  className="album-tool-button"
+                  disabled={exportingStory || savingAll || downloading}
+                  onClick={() => void exportStoryVideo()}
+                  type="button"
+                >
+                  <Icon name="video" size={16} />
+                  <span>
+                    {exportingStory ? messages.viewer.exportingStoryLabel : messages.viewer.storyVideoLabel}
+                  </span>
+                </button>
+              )}
               {album.items.length > 1 && (
                 <button
                   aria-label={messages.viewer.saveAllAria(album.items.length)}
                   className="album-tool-button album-tool-button--accent"
-                  disabled={savingAll || downloading}
+                  disabled={savingAll || downloading || exportingStory}
                   onClick={() => void saveAllPhotos()}
                   type="button"
                 >
@@ -413,7 +485,11 @@ export function AlbumViewer({
               <div className="viewer__topbar">
                 <span>
                   {padFrame(activeIndex + 1)} / {padFrame(album.items.length)} ·{' '}
-                  {current.kind === 'gif' ? 'GIF' : messages.viewer.photoKind}
+                  {current.kind === 'video'
+                    ? messages.viewer.videoKind
+                    : current.kind === 'gif'
+                      ? 'GIF'
+                      : messages.viewer.photoKind}
                 </span>
                 <span>
                   {current.width && current.height
@@ -465,7 +541,8 @@ export function AlbumViewer({
                 {album.items.map((item, index) => {
                   const isActive = index === activeIndex
                   const isUnthumbnailedGif = item.kind === 'gif' && !item.thumbnailUrl
-                  const shouldLoadThumb = isActive || (heroLoaded && !isUnthumbnailedGif)
+                  const isUnthumbnailedVideo = item.kind === 'video' && !item.thumbnailUrl
+                  const shouldLoadThumb = !isUnthumbnailedVideo && (isActive || (heroLoaded && !isUnthumbnailedGif))
                   return (
                     <button
                       aria-current={isActive}
@@ -476,7 +553,12 @@ export function AlbumViewer({
                       role="listitem"
                       type="button"
                     >
-                      {shouldLoadThumb ? (
+                      {isUnthumbnailedVideo ? (
+                        <span className="thumbnail__video" aria-hidden="true">
+                          <Icon name="video" size={15} />
+                          <span>LIVE</span>
+                        </span>
+                      ) : shouldLoadThumb ? (
                         <img
                           alt=""
                           crossOrigin="anonymous"

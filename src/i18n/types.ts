@@ -84,6 +84,13 @@ export interface GalleryMessages {
     framesUnit: string
     viewerAria: string
     photoKind: string
+    videoKind: string
+    storyVideoAria: string
+    storyVideoLabel: string
+    exportingStoryLabel: string
+    storySharedNotice: string
+    storyDownloadedNotice: string
+    storyExportError: string
     prevPhotoAria: string
     nextPhotoAria: string
     fullscreenAria: string

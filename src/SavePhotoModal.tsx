@@ -71,11 +71,23 @@ export function SavePhotoModal({ item, onClose, onShared }: Props) {
           <span className="vf-corner vf-corner--tr" aria-hidden="true" />
           <span className="vf-corner vf-corner--bl" aria-hidden="true" />
           <span className="vf-corner vf-corner--br" aria-hidden="true" />
-          <img
-            alt={item.file.name}
-            className="save-photo-modal__image"
-            src={item.previewUrl}
-          />
+          {item.file.type.startsWith('video/') ? (
+            <video
+              autoPlay
+              className="save-photo-modal__image"
+              controls
+              loop
+              muted
+              playsInline
+              src={item.previewUrl}
+            />
+          ) : (
+            <img
+              alt={item.file.name}
+              className="save-photo-modal__image"
+              src={item.previewUrl}
+            />
+          )}
         </div>
 
         <p className="save-photo-modal__hint">

@@ -41,6 +41,7 @@ import {
   R2_QUOTA_EXCEEDED_ERROR,
   UPLOAD_TOKEN_TTL_MS,
   UUID_PATTERN,
+  VIDEO_MIME_TYPES,
   buildAlbumShareUrl,
   extensionForMime,
   isFile,
@@ -239,7 +240,7 @@ async function handleJsonComplete(
 
   const maxR2Bytes = parseR2MaxStorageBytes(Deno.env.get('R2_MAX_STORAGE_BYTES'))
   const assets = submittedFiles.map((file, idx) => ({
-    kind: file.role === 'gif' ? 'gif' : 'image',
+    kind: file.role === 'video' ? 'video' : file.role === 'gif' ? 'gif' : 'image',
     storage_path: file.storagePath,
     mime_type: file.mimeType,
     file_name: file.name,
@@ -405,6 +406,7 @@ export async function handleMultipartPublish(
   const message = String(form.get('message') || '').trim().slice(0, 500)
   const strip = form.get('strip')
   const loopGif = form.get('loopGif')
+  const movingVideo = form.get('movingVideo')
   const photos = form.getAll('photos').filter(isFile)
 
   if (!allowedPhotoCounts || !allowedPhotoCounts.includes(photos.length)) {
@@ -413,14 +415,24 @@ export async function handleMultipartPublish(
   if (!isFile(strip) || !validFile(strip, IMAGE_MIME_TYPES)) {
     return ctxJson(ctx, { error: 'Ảnh photobooth không hợp lệ.' }, 400)
   }
-  if (!isFile(loopGif) || !validFile(loopGif, GIF_MIME_TYPES)) {
+  const validGif = isFile(loopGif) ? loopGif : null
+  if (validGif && !validFile(validGif, GIF_MIME_TYPES)) {
     return ctxJson(ctx, { error: 'Ảnh động không hợp lệ.' }, 400)
+  }
+  const validVideo = isFile(movingVideo) ? movingVideo : null
+  if (validVideo && !validFile(validVideo, VIDEO_MIME_TYPES)) {
+    return ctxJson(ctx, { error: 'Video chuyển động không hợp lệ.' }, 400)
   }
   if (photos.some((photo) => !validFile(photo, IMAGE_MIME_TYPES))) {
     return ctxJson(ctx, { error: 'Một hoặc nhiều ảnh chụp không hợp lệ.' }, 400)
   }
 
-  const totalBytes = [strip, loopGif, ...photos].reduce((sum, file) => sum + file.size, 0)
+  const totalBytes = [
+    strip,
+    ...(validGif ? [validGif] : []),
+    ...(validVideo ? [validVideo] : []),
+    ...photos,
+  ].reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > MAX_REQUEST_BYTES) {
     return ctxJson(ctx, { error: 'Bộ ảnh vượt quá giới hạn 60 MB.' }, 413)
   }
@@ -437,13 +449,16 @@ export async function handleMultipartPublish(
   if (!begun.ok) return begun.response
 
   const { albumId, shareCode, durationMs: dbInitDuration } = begun
-  const files: Array<{ file: File; kind: 'image' | 'gif'; name: string }> = [
+  const files: Array<{ file: File; kind: 'image' | 'gif' | 'video'; name: string }> = [
     { file: strip, kind: 'image', name: `photobooth.${extensionForMime(strip.type)}` },
-    { file: loopGif, kind: 'gif', name: 'khoanh-khac.gif' },
+    ...(validGif ? [{ file: validGif, kind: 'gif' as const, name: 'photobooth.gif' }] : []),
+    ...(validVideo
+      ? [{ file: validVideo, kind: 'video' as const, name: `moving-strip.${extensionForMime(validVideo.type)}` }]
+      : []),
     ...photos.map((photo, index) => ({
       file: photo,
       kind: 'image' as const,
-      name: `anh-${String(index + 1).padStart(2, '0')}.${extensionForMime(photo.type)}`,
+      name: `photo-${String(index + 1).padStart(2, '0')}.${extensionForMime(photo.type)}`,
     })),
   ]
 
@@ -452,7 +467,7 @@ export async function handleMultipartPublish(
 
   const uploadStart = performance.now()
   let assets: Array<{
-    kind: 'image' | 'gif'
+    kind: 'image' | 'gif' | 'video'
     storage_path: string
     mime_type: string
     file_name: string

@@ -107,10 +107,6 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
   }
 
   const items = rawItems
-    .filter((entry) => {
-      if (!entry || typeof entry !== 'object') return true
-      return (entry as Record<string, unknown>).kind !== 'video'
-    })
     .map((entry, index) => {
       if (!entry || typeof entry !== 'object') {
         throw new Error('Dữ liệu ảnh không hợp lệ.')
@@ -121,7 +117,7 @@ export function parseManifest(payload: ManifestResponse): GalleryAlbum {
       const url = stringOrEmpty(media.url).trim()
       const id = stringOrEmpty(media.id)
 
-      if (!id || !isSafeMediaUrl(url) || (kind !== 'image' && kind !== 'gif')) {
+      if (!id || !isSafeMediaUrl(url) || (kind !== 'image' && kind !== 'gif' && kind !== 'video')) {
         throw new Error('Dữ liệu ảnh không hợp lệ.')
       }
 

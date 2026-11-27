@@ -110,6 +110,10 @@ const ERROR_TRANSLATIONS: Record<string, { en: string; ru: string }> = {
     en: 'Could not create photobooth print.',
     ru: 'Не удалось создать фотополосу.',
   },
+  'Không thể đọc video chuyển động.': {
+    en: 'Could not read moving strip video.',
+    ru: 'Не удалось загрузить видео фотополосы.',
+  },
 }
 
 export function normalizeLocale(raw: unknown): Locale | null {

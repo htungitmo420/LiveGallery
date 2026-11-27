@@ -28,7 +28,13 @@ export function normalizeMediaFileName(
     ? 'gif'
     : cleanMime === 'image/png'
       ? 'png'
-      : 'jpg'
+      : cleanMime === 'video/mp4'
+        ? 'mp4'
+        : cleanMime === 'video/webm'
+          ? 'webm'
+          : cleanMime === 'video/quicktime'
+            ? 'mov'
+            : 'jpg'
   const trimmed = fileName.trim()
   const withoutExt = trimmed ? trimmed.replace(/\.[a-z0-9]+$/i, '') : fallbackBase
   const sanitized = withoutExt
@@ -142,8 +148,8 @@ function selectShareableMediaFiles(files: File[]): { shareable: File[]; skippedC
   if (files.length === 0) return { shareable: [], skippedCount: 0 }
   if (canShareMediaFiles(files)) return { shareable: files, skippedCount: 0 }
 
-  // Some mobile browsers reject mixed image+GIF batches in navigator.canShare({ files }).
-  const stills = files.filter((file) => file.type !== 'image/gif')
+  // Some mobile browsers reject mixed image+GIF/video batches in navigator.canShare({ files }).
+  const stills = files.filter((file) => file.type.startsWith('image/') && file.type !== 'image/gif')
   if (stills.length > 0 && stills.length < files.length && canShareMediaFiles(stills)) {
     return { shareable: stills, skippedCount: files.length - stills.length }
   }
@@ -288,6 +294,13 @@ export async function prepareGalleryMediaFile(
     if (!response.ok) throw new Error('Liên kết ảnh đã hết hạn.')
     const rawBlob = await response.blob()
     const rawMime = (rawBlob.type || item.mimeType || '').split(';', 1)[0].trim().toLowerCase()
+
+    if (item.kind === 'video' || rawMime.startsWith('video/')) {
+      const videoMime = rawMime.startsWith('video/') ? rawMime : 'video/mp4'
+      const videoBlob = rawBlob.type === videoMime ? rawBlob : new Blob([rawBlob], { type: videoMime })
+      const fileName = normalizeMediaFileName(item.fileName, videoMime, 'moving-strip')
+      return new File([videoBlob], fileName, { type: videoMime, lastModified: Date.now() })
+    }
 
     if (item.kind === 'gif' || rawMime === 'image/gif') {
       const gifBlob = rawBlob.type === 'image/gif' ? rawBlob : new Blob([rawBlob], { type: 'image/gif' })

@@ -28,6 +28,7 @@ export type IconName =
   | 'moon'
   | 'qr'
   | 'sun'
+  | 'video'
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   'arrow-left': <path d="m14 18-6-6 6-6M8 12h11" />,
@@ -81,6 +82,12 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>
+  ),
+  video: (
+    <>
+      <rect height="13" rx="1.5" width="14" x="2.5" y="5.5" />
+      <path d="m16.5 10 5-3v10l-5-3" />
     </>
   ),
 }

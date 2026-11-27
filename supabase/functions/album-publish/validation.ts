@@ -25,6 +25,7 @@ export const EXPECTED_PHOTO_COUNTS: Record<string, number[]> = {
 
 export const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 export const GIF_MIME_TYPES = ['image/gif']
+export const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime']
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const R2_QUOTA_EXCEEDED_ERROR = 'Bộ nhớ lưu trữ ảnh đã đạt giới hạn tối đa. Tạm ngừng nhận album mới.'
@@ -56,16 +57,21 @@ export function extensionForMime(mimeType: string): string {
     'image/png': 'png',
     'image/webp': 'webp',
     'image/gif': 'gif',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
   }
   return byType[normalizeMimeType(mimeType)] || 'bin'
 }
 
 export function allowedMimesForRole(role: UploadFileRole): readonly string[] {
-  return role === 'gif' ? GIF_MIME_TYPES : IMAGE_MIME_TYPES
+  if (role === 'gif') return GIF_MIME_TYPES
+  if (role === 'video') return VIDEO_MIME_TYPES
+  return IMAGE_MIME_TYPES
 }
 
 export function isValidRole(value: unknown): value is UploadFileRole {
-  return value === 'strip' || value === 'gif' || value === 'photo'
+  return value === 'strip' || value === 'gif' || value === 'video' || value === 'photo'
 }
 
 export function buildAlbumShareUrl(galleryBaseUrl: string, shareCode: string): string {
@@ -80,12 +86,13 @@ export function validateInitFiles(
   if (!allowedPhotoCounts) {
     return { ok: false, error: 'Bố cục ảnh không hợp lệ.', status: 400 }
   }
-  if (!Array.isArray(rawFiles) || rawFiles.length < 3 || rawFiles.length > 12) {
+  if (!Array.isArray(rawFiles) || rawFiles.length < 2 || rawFiles.length > 13) {
     return { ok: false, error: 'Danh sách tệp ảnh không hợp lệ.', status: 400 }
   }
 
   let stripCount = 0
   let gifCount = 0
+  let videoCount = 0
   let photoCount = 0
   let totalBytes = 0
   const parsed: ParsedInitFile[] = []
@@ -117,10 +124,13 @@ export function validateInitFiles(
       canonicalName = `photobooth.${ext}`
     } else if (record.role === 'gif') {
       gifCount += 1
-      canonicalName = 'khoanh-khac.gif'
+      canonicalName = 'photobooth.gif'
+    } else if (record.role === 'video') {
+      videoCount += 1
+      canonicalName = `moving-strip.${ext}`
     } else {
       photoCount += 1
-      canonicalName = `anh-${String(photoCount).padStart(2, '0')}.${ext}`
+      canonicalName = `photo-${String(photoCount).padStart(2, '0')}.${ext}`
     }
 
     parsed.push({
@@ -132,7 +142,7 @@ export function validateInitFiles(
     })
   }
 
-  if (stripCount !== 1 || gifCount !== 1 || !allowedPhotoCounts.includes(photoCount)) {
+  if (stripCount !== 1 || gifCount > 1 || videoCount > 1 || !allowedPhotoCounts.includes(photoCount)) {
     return { ok: false, error: 'Số lượng ảnh không khớp với bố cục.', status: 400 }
   }
   if (totalBytes > MAX_REQUEST_BYTES) {
@@ -146,7 +156,7 @@ export function validateCompleteFiles(
   albumId: string,
   rawFiles: unknown,
 ): { ok: true; files: UploadManifestFile[] } | { ok: false; error: string } {
-  if (!Array.isArray(rawFiles) || rawFiles.length < 3 || rawFiles.length > 12) {
+  if (!Array.isArray(rawFiles) || rawFiles.length < 2 || rawFiles.length > 13) {
     return { ok: false, error: 'Danh sách tệp hoàn tất không hợp lệ.' }
   }
 

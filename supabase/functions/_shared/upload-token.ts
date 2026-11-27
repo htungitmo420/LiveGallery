@@ -5,7 +5,7 @@ const DEFAULT_UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000
 const MAX_UPLOAD_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/
 
-export type UploadFileRole = 'strip' | 'gif' | 'photo'
+export type UploadFileRole = 'strip' | 'gif' | 'video' | 'photo'
 
 export interface UploadManifestFile {
   index: number
